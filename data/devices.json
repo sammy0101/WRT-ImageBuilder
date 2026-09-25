@@ -1,0 +1,142 @@
+{
+  "x86_generic": {
+    "name": "[x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)",
+    "target": "x86/64",
+    "profile": "generic"
+  },
+  "x86_legacy": {
+    "name": "[x86] 傳統 BIOS 引導舊主機 (Legacy MBR)",
+    "target": "x86/64",
+    "profile": "legacy"
+  },
+  "nanopi_r2s": {
+    "name": "[NanoPi] 友善 NanoPi R2S",
+    "target": "rockchip/armv8",
+    "profile": "friendlyarm_nanopi-r2s"
+  },
+  "nanopi_r2c": {
+    "name": "[NanoPi] 友善 NanoPi R2C",
+    "target": "rockchip/armv8",
+    "profile": "friendlyarm_nanopi-r2c"
+  },
+  "nanopi_r4s": {
+    "name": "[NanoPi] 友善 NanoPi R4S",
+    "target": "rockchip/armv8",
+    "profile": "friendlyarm_nanopi-r4s"
+  },
+  "nanopi_r4se": {
+    "name": "[NanoPi] 友善 NanoPi R4SE",
+    "target": "rockchip/armv8",
+    "profile": "friendlyarm_nanopi-r4se"
+  },
+  "nanopi_r5s": {
+    "name": "[NanoPi] 友善 NanoPi R5S",
+    "target": "rockchip/armv8",
+    "profile": "friendlyarm_nanopi-r5s"
+  },
+  "nanopi_r5c": {
+    "name": "[NanoPi] 友善 NanoPi R5C",
+    "target": "rockchip/armv8",
+    "profile": "friendlyarm_nanopi-r5c"
+  },
+  "nanopi_r6s": {
+    "name": "[NanoPi] 友善 NanoPi R6S",
+    "target": "rockchip/armv8",
+    "profile": "friendlyarm_nanopi-r6s"
+  },
+  "nanopi_r6c": {
+    "name": "[NanoPi] 友善 NanoPi R6C",
+    "target": "rockchip/armv8",
+    "profile": "friendlyarm_nanopi-r6c"
+  },
+  "rpi_4": {
+    "name": "[樹莓派] Raspberry Pi 4 Model B / CM4",
+    "target": "bcm27xx/bcm2711",
+    "profile": "rpi-4"
+  },
+  "rpi_5": {
+    "name": "[樹莓派] Raspberry Pi 5",
+    "target": "bcm27xx/bcm2712",
+    "profile": "rpi-5"
+  },
+  "rpi_3": {
+    "name": "[樹莓派] Raspberry Pi 3 Model B / B+",
+    "target": "bcm27xx/bcm2710",
+    "profile": "rpi-3"
+  },
+  "redmi_ax6000": {
+    "name": "[紅米] Redmi AX6000 (MT7986)",
+    "target": "mediatek/filogic",
+    "profile": "xiaomi_redmi-router-ax6000"
+  },
+  "xiaomi_ax3000t": {
+    "name": "[小米] 小米路由器 AX3000T",
+    "target": "mediatek/filogic",
+    "profile": "xiaomi_mi-router-ax3000t"
+  },
+  "xiaomi_wr30u": {
+    "name": "[小米] 小米路由器 WR30U",
+    "target": "mediatek/filogic",
+    "profile": "xiaomi_mi-router-wr30u"
+  },
+  "redmi_ax3200": {
+    "name": "[紅米] Redmi AX3200 / 小米 AX6S",
+    "target": "mediatek/mt7622",
+    "profile": "xiaomi_redmi-router-ax3200"
+  },
+  "xiaomi_4a_gigabit": {
+    "name": "[小米] 小米路由器 4A 千兆版 (Gigabit)",
+    "target": "ramips/mt7621",
+    "profile": "xiaomi_mi-router-4a-gigabit"
+  },
+  "glinet_mt3000": {
+    "name": "[GL.iNet] GL-MT3000 (Beryl AX)",
+    "target": "mediatek/filogic",
+    "profile": "glinet_gl-mt3000"
+  },
+  "glinet_mt6000": {
+    "name": "[GL.iNet] GL-MT6000 (Flint 2)",
+    "target": "mediatek/filogic",
+    "profile": "glinet_gl-mt6000"
+  },
+  "glinet_mt2500": {
+    "name": "[GL.iNet] GL-MT2500 / MT2500A (Brume 2)",
+    "target": "mediatek/filogic",
+    "profile": "glinet_gl-mt2500"
+  },
+  "glinet_axt1800": {
+    "name": "[GL.iNet] GL-AXT1800 (Slate AX)",
+    "target": "ipq807x/generic",
+    "profile": "glinet_gl-axt1800"
+  },
+  "glinet_ax1800": {
+    "name": "[GL.iNet] GL-AX1800 (Flint)",
+    "target": "ipq807x/generic",
+    "profile": "glinet_gl-ax1800"
+  },
+  "asus_tuf_ax4200": {
+    "name": "[華碩] ASUS TUF Gaming AX4200",
+    "target": "mediatek/filogic",
+    "profile": "asus_tuf-gaming-ax4200"
+  },
+  "tplink_xdr6088": {
+    "name": "[TP-Link] TL-XDR6088 雙 2.5G 路由器",
+    "target": "mediatek/filogic",
+    "profile": "tplink_tl-xdr6088"
+  },
+  "qihoo_360t7": {
+    "name": "[360] 360 T7 路由器",
+    "target": "mediatek/filogic",
+    "profile": "qihoo_360-t7"
+  },
+  "jcg_q30pro": {
+    "name": "[捷稀] JCG Q30 Pro",
+    "target": "mediatek/filogic",
+    "profile": "jcg_q30-pro"
+  },
+  "phicomm_k2p": {
+    "name": "[斐訊] Phicomm K2P (MT7621)",
+    "target": "ramips/mt7621",
+    "profile": "phicomm_k2p"
+  }
+}
