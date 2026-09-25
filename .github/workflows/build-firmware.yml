@@ -13,30 +13,43 @@ on:
           - 'OpenWrt'
 
       luci_version:
-        description: '韌體版本 (輸入 auto 或 latest 自動抓取最新正式版，亦可指定如 24.10.0, 23.05.5)'
+        description: '韌體版本 (輸入 auto 或 latest 自動抓取最新正式版)'
         required: true
         default: 'auto'
         type: string
 
       rootfs_size_g:
-        description: '軟體包分區空間大小 (單位：GB，請直接輸入數字，例如 1 或 2 或 4)'
+        description: '軟體包分區空間大小 (單位：GB，請直接輸入數字，例如 1 或 2)'
         required: true
         default: '1'
         type: string
 
-      target_arch:
-        description: '硬體架構 (預設為 x86/64，若為 ARM 請修改)'
+      device_model:
+        description: '選擇你的設備型號 (自動對應架構與 Profile)'
         required: true
         type: choice
-        default: 'x86/64'
+        default: 'x86_generic'
         options:
-          - 'x86/64'
-          - 'armsr/armv8'
+          - 'x86_generic: [x86] 標準軟路由 / 工控機 / 虛擬機 (PVE, ESXi, PC)'
+          - 'nanopi_r2s: [ARM] 友善 NanoPi R2S'
+          - 'nanopi_r4s: [ARM] 友善 NanoPi R4S'
+          - 'nanopi_r5s: [ARM] 友善 NanoPi R5S'
+          - 'redmi_ax6000: [ARM] 小米 / 紅米 Redmi AX6000'
+          - 'glinet_mt3000: [ARM] GL.iNet GL-MT3000 (Beryl AX)'
+          - 'glinet_mt6000: [ARM] GL.iNet GL-MT6000 (Flint 2)'
+          - 'rpi_4: [ARM] 樹莓派 Raspberry Pi 4B'
+          - 'custom: [自訂] 其他設備 (請在下方欄位手動填寫)'
 
-      profile:
-        description: '設備 Profile (x86 請保持 generic，其他型號請輸入相應 profile)'
-        required: true
-        default: 'generic'
+      custom_target:
+        description: '【僅在上方選 custom 時需填】目標架構 Target (例: mediatek/filogic)'
+        required: false
+        default: ''
+        type: string
+
+      custom_profile:
+        description: '【僅在上方選 custom 時需填】設備代號 Profile (例: xiaomi_redmi-router-ax6000)'
+        required: false
+        default: ''
         type: string
 
       include_docker:
@@ -71,7 +84,7 @@ on:
 
 jobs:
   build:
-    name: 構建韌體 (${{ inputs.firmware_type }} - ${{ inputs.target_arch }})
+    name: 構建韌體 (${{ inputs.firmware_type }})
     runs-on: ubuntu-24.04
 
     steps:
@@ -92,12 +105,12 @@ jobs:
           FW_TYPE="${{ inputs.firmware_type }}"
           
           if [[ "$INPUT_VER" == "auto" || "$INPUT_VER" == "latest" || -z "$INPUT_VER" ]]; then
-            echo "正在連線官方儲存庫自動查詢 $FW_TYPE 最新版本..."
+            echo "正在查詢 $FW_TYPE 最新正式發布版本..."
             DETECTED_VER=$(./shell/fetch-versions.sh "$FW_TYPE" latest)
-            echo "✓ 自動讀取成功！選定最新正式版本: $DETECTED_VER"
+            echo "✓ 選定最新版本: $DETECTED_VER"
             echo "version=$DETECTED_VER" >> $GITHUB_OUTPUT
           else
-            echo "使用手動指定版本: $INPUT_VER"
+            echo "使用指定版本: $INPUT_VER"
             echo "version=$INPUT_VER" >> $GITHUB_OUTPUT
           fi
 
@@ -106,8 +119,9 @@ jobs:
         env:
           FIRMWARE_TYPE: ${{ inputs.firmware_type }}
           VERSION: ${{ steps.resolve_version.outputs.version }}
-          TARGET_ARCH: ${{ inputs.target_arch }}
-          PROFILE: ${{ inputs.profile }}
+          DEVICE_MODEL: ${{ inputs.device_model }}
+          CUSTOM_TARGET: ${{ inputs.custom_target }}
+          CUSTOM_PROFILE: ${{ inputs.custom_profile }}
           ROOTFS_SIZE_G: ${{ inputs.rootfs_size_g }}
           INCLUDE_DOCKER: ${{ inputs.include_docker }}
           LAN_IP: ${{ inputs.lan_ip }}
@@ -128,8 +142,8 @@ jobs:
           echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
           echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **設備型號**: ${{ inputs.device_model }}" >> $GITHUB_STEP_SUMMARY
           echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
-          echo "- **目標設備架構**: ${{ inputs.target_arch }} (${{ inputs.profile }})" >> $GITHUB_STEP_SUMMARY
           echo "- **管理 IP**: ${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
           echo "#### 檔案 SHA256 校驗表" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
@@ -139,5 +153,5 @@ jobs:
       - name: 上傳韌體構建產物
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.profile }}-${{ inputs.rootfs_size_g }}G
+          name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
           path: output/*
