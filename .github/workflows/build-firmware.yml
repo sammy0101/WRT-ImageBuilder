@@ -102,11 +102,17 @@ jobs:
       - name: 檢出專案代碼
         uses: actions/checkout@v4
 
-      - name: 安裝編譯相依套件 (含 qemu-utils 轉換工具)
+      - name: 安裝編譯相依套件 (含 ISO 與虛擬化轉換工具)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git \
-            gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl qemu-utils
+            gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl qemu-utils \
+            genisoimage dosfstools mtools xorriso
+          
+          # 確保 mkisofs 連結必然指向可用的 genisoimage
+          if ! command -v mkisofs &>/dev/null && command -v genisoimage &>/dev/null; then
+            sudo ln -s "$(which genisoimage)" /usr/local/bin/mkisofs
+          fi
 
       - name: 解析與自動讀取韌體版本
         id: resolve_version
@@ -183,7 +189,7 @@ jobs:
             - **硬體設備**: ${{ inputs.device_model }}
             - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
             - **預設 LAN IP**: `${{ inputs.lan_ip }}`
-            - **虛擬化支援**: 包含原廠 `.img.gz` 與 VMware 專用 `.vmdk`
+            - **虛擬化支援**: 包含原廠 `.img.gz`、VMware `.vmdk`、Hyper-V `.vhdx` 與安裝引導 `.iso`
 
             #### 🔒 SHA256 檔案校驗碼
             ```text
