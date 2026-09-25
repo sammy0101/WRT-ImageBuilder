@@ -1,0 +1,36 @@
+name: 自動讀取官方可用版本列表
+
+on:
+  schedule:
+    # 每天 UTC 00:00 (台灣/香港時間 08:00) 自動檢測
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-versions:
+    name: 檢查 OpenWrt 與 ImmortalWrt 最新可用版本
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出專案代碼
+        uses: actions/checkout@v4
+
+      - name: 查詢遠端發行版本
+        run: |
+          chmod +x shell/fetch-versions.sh
+          echo "=== OpenWrt 官方最新可用正式版本清單 ==="
+          ./shell/fetch-versions.sh openwrt list | head -n 10
+          
+          echo ""
+          echo "=== ImmortalWrt 官方最新可用正式版本清單 ==="
+          ./shell/fetch-versions.sh immortalwrt list | head -n 10
+
+      - name: 輸出檢測結果至摘要
+        run: |
+          OPENWRT_LATEST=$(./shell/fetch-versions.sh openwrt latest)
+          IMMORTALWRT_LATEST=$(./shell/fetch-versions.sh immortalwrt latest)
+          
+          echo "### 🌐 官方最新釋出版本資訊" >> $GITHUB_STEP_SUMMARY
+          echo "| 系統 | 最新穩定版本 |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **OpenWrt** | \`$OPENWRT_LATEST\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ImmortalWrt** | \`$IMMORTALWRT_LATEST\` |" >> $GITHUB_STEP_SUMMARY
