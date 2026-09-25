@@ -28,12 +28,11 @@ on:
         description: '請直接從下拉選單選擇你的設備型號'
         required: true
         type: choice
-        default: 'x86_generic'
+        default: 'x86_generic: [x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)'
         options:
-          # --- x86 軟路由與虛擬機 ---
+          # --- AUTO_DEVICES_START ---
           - 'x86_generic: [x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)'
           - 'x86_legacy: [x86] 傳統 BIOS 引導舊主機 (Legacy MBR)'
-          # --- 友善 FriendlyElec NanoPi 系列 ---
           - 'nanopi_r2s: [NanoPi] 友善 NanoPi R2S'
           - 'nanopi_r2c: [NanoPi] 友善 NanoPi R2C'
           - 'nanopi_r4s: [NanoPi] 友善 NanoPi R4S'
@@ -42,28 +41,25 @@ on:
           - 'nanopi_r5c: [NanoPi] 友善 NanoPi R5C'
           - 'nanopi_r6s: [NanoPi] 友善 NanoPi R6S'
           - 'nanopi_r6c: [NanoPi] 友善 NanoPi R6C'
-          # --- 樹莓派 Raspberry Pi 系列 ---
           - 'rpi_4: [樹莓派] Raspberry Pi 4 Model B / CM4'
           - 'rpi_5: [樹莓派] Raspberry Pi 5'
           - 'rpi_3: [樹莓派] Raspberry Pi 3 Model B / B+'
-          # --- 小米 / 紅米系列 ---
           - 'redmi_ax6000: [紅米] Redmi AX6000 (MT7986)'
           - 'xiaomi_ax3000t: [小米] 小米路由器 AX3000T'
           - 'xiaomi_wr30u: [小米] 小米路由器 WR30U'
           - 'redmi_ax3200: [紅米] Redmi AX3200 / 小米 AX6S'
           - 'xiaomi_4a_gigabit: [小米] 小米路由器 4A 千兆版 (Gigabit)'
-          # --- GL.iNet 旅行與家用路由系列 ---
           - 'glinet_mt3000: [GL.iNet] GL-MT3000 (Beryl AX)'
           - 'glinet_mt6000: [GL.iNet] GL-MT6000 (Flint 2)'
           - 'glinet_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2)'
           - 'glinet_axt1800: [GL.iNet] GL-AXT1800 (Slate AX)'
           - 'glinet_ax1800: [GL.iNet] GL-AX1800 (Flint)'
-          # --- 華碩 / TP-Link / 360 / 斐訊等熱門路由 ---
           - 'asus_tuf_ax4200: [華碩] ASUS TUF Gaming AX4200'
           - 'tplink_xdr6088: [TP-Link] TL-XDR6088 雙 2.5G 路由器'
           - 'qihoo_360t7: [360] 360 T7 路由器'
           - 'jcg_q30pro: [捷稀] JCG Q30 Pro'
           - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621)'
+          # --- AUTO_DEVICES_END ---
 
       include_docker:
         description: '是否整合 Docker 與 Dockerman 容器介面'
