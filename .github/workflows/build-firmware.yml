@@ -109,7 +109,6 @@ jobs:
             gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl qemu-utils \
             genisoimage dosfstools mtools xorriso
           
-          # 確保 mkisofs 連結必然指向可用的 genisoimage
           if ! command -v mkisofs &>/dev/null && command -v genisoimage &>/dev/null; then
             sudo ln -s "$(which genisoimage)" /usr/local/bin/mkisofs
           fi
@@ -160,7 +159,9 @@ jobs:
           echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **設備型號**: ${{ inputs.device_model }}" >> $GITHUB_STEP_SUMMARY
           echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
-          echo "- **管理 IP**: ${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **管理網址**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **預設帳號**: \`root\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **預設密碼**: \`無密碼（直接留空登入）\`" >> $GITHUB_STEP_SUMMARY
           echo "#### 檔案 SHA256 校驗表" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
           cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
@@ -176,7 +177,10 @@ jobs:
           name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
           path: output/*
 
-      - name: 自動發布至 GitHub Releases (永久保存)
+      # ==============================================================================
+      # 自動正式發布至 GitHub Releases (永久保存)
+      # ==============================================================================
+      - name: 自動發布至 GitHub Releases
         uses: softprops/action-gh-release@v2
         if: ${{ success() }}
         with:
@@ -188,8 +192,12 @@ jobs:
             - **系統版本**: ${{ steps.resolve_version.outputs.version }}
             - **硬體設備**: ${{ inputs.device_model }}
             - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
-            - **預設 LAN IP**: `${{ inputs.lan_ip }}`
             - **虛擬化支援**: 包含原廠 `.img.gz`、VMware `.vmdk`、Hyper-V `.vhdx` 與安裝引導 `.iso`
+
+            ### 🔑 預設登入認證資訊
+            - **管理網址**: `http://${{ inputs.lan_ip }}`（單網卡設備請查詢上級 DHCP IP）
+            - **使用者名稱 (User)**: `root`
+            - **登入密碼 (Password)**: `無密碼（密碼欄留空，直接按登入即可）`
 
             #### 🔒 SHA256 檔案校驗碼
             ```text
