@@ -95,6 +95,8 @@ jobs:
   build:
     name: 構建韌體 (${{ inputs.firmware_type }})
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write # 賦予發布 GitHub Release 的必要寫入權限
 
     steps:
       - name: 檢出專案代碼
@@ -146,6 +148,8 @@ jobs:
         run: |
           cd output
           sha256sum * > sha256sums.txt
+          
+          # 寫入 GitHub Step Summary
           echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
           echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
@@ -156,9 +160,38 @@ jobs:
           echo '```text' >> $GITHUB_STEP_SUMMARY
           cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          
+          # 將校驗碼多行傳遞給 Release 說明使用
+          echo "hashes<<EOF" >> $GITHUB_OUTPUT
+          cat sha256sums.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: 上傳韌體構建產物
+      - name: 上傳韌體構建產物至 Artifacts (保留90天)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
           path: output/*
+
+      # ==============================================================================
+      # 自動正式發布至 GitHub Releases (永久保存)
+      # ==============================================================================
+      - name: 自動發布至 GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: ${{ success() }}
+        with:
+          tag_name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-build${{ github.run_number }}
+          name: ${{ inputs.firmware_type }} ${{ steps.resolve_version.outputs.version }} (${{ inputs.device_model }})
+          body: |
+            ### 🚀 韌體發布資訊
+            - **韌體系統**: ${{ inputs.firmware_type }}
+            - **系統版本**: ${{ steps.resolve_version.outputs.version }}
+            - **硬體設備**: ${{ inputs.device_model }}
+            - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
+            - **預設 LAN IP**: `${{ inputs.lan_ip }}`
+            - **繁體中文**: 已預載繁體中文 (zh-tw)
+
+            #### 🔒 SHA256 檔案校驗碼
+            ```text
+            ${{ steps.summary.outputs.hashes }}
+            ```
+          files: output/*
