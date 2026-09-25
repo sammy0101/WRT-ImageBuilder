@@ -1,0 +1,143 @@
+name: 構建 OpenWrt / ImmortalWrt 自訂韌體
+
+on:
+  workflow_dispatch:
+    inputs:
+      firmware_type:
+        description: '選擇韌體系統分支'
+        required: true
+        type: choice
+        default: 'ImmortalWrt'
+        options:
+          - 'ImmortalWrt'
+          - 'OpenWrt'
+
+      luci_version:
+        description: '韌體版本 (輸入 auto 或 latest 自動抓取最新正式版，亦可指定如 24.10.0, 23.05.5)'
+        required: true
+        default: 'auto'
+        type: string
+
+      rootfs_size_g:
+        description: '軟體包分區空間大小 (單位：GB，請直接輸入數字，例如 1 或 2 或 4)'
+        required: true
+        default: '1'
+        type: string
+
+      target_arch:
+        description: '硬體架構 (預設為 x86/64，若為 ARM 請修改)'
+        required: true
+        type: choice
+        default: 'x86/64'
+        options:
+          - 'x86/64'
+          - 'armsr/armv8'
+
+      profile:
+        description: '設備 Profile (x86 請保持 generic，其他型號請輸入相應 profile)'
+        required: true
+        default: 'generic'
+        type: string
+
+      include_docker:
+        description: '是否整合 Docker 與 Dockerman 容器介面'
+        required: false
+        type: boolean
+        default: false
+
+      lan_ip:
+        description: '自訂管理 LAN 端 IP (多網口機型預設 192.168.100.1)'
+        required: false
+        default: '192.168.100.1'
+        type: string
+
+      enable_pppoe:
+        description: '是否啟用 WAN 端 PPPoE 撥號'
+        required: false
+        type: boolean
+        default: false
+
+      pppoe_account:
+        description: 'PPPoE 撥號帳號 (未啟用可留空)'
+        required: false
+        default: ''
+        type: string
+
+      pppoe_password:
+        description: 'PPPoE 撥號密碼 (未啟用可留空)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build:
+    name: 構建韌體 (${{ inputs.firmware_type }} - ${{ inputs.target_arch }})
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: 檢出專案代碼
+        uses: actions/checkout@v4
+
+      - name: 安裝編譯相依套件
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git \
+            gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl
+
+      - name: 解析與自動讀取韌體版本
+        id: resolve_version
+        run: |
+          chmod +x shell/fetch-versions.sh
+          INPUT_VER="${{ inputs.luci_version }}"
+          FW_TYPE="${{ inputs.firmware_type }}"
+          
+          if [[ "$INPUT_VER" == "auto" || "$INPUT_VER" == "latest" || -z "$INPUT_VER" ]]; then
+            echo "正在連線官方儲存庫自動查詢 $FW_TYPE 最新版本..."
+            DETECTED_VER=$(./shell/fetch-versions.sh "$FW_TYPE" latest)
+            echo "✓ 自動讀取成功！選定最新正式版本: $DETECTED_VER"
+            echo "version=$DETECTED_VER" >> $GITHUB_OUTPUT
+          else
+            echo "使用手動指定版本: $INPUT_VER"
+            echo "version=$INPUT_VER" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 執行韌體生成構建
+        id: run_builder
+        env:
+          FIRMWARE_TYPE: ${{ inputs.firmware_type }}
+          VERSION: ${{ steps.resolve_version.outputs.version }}
+          TARGET_ARCH: ${{ inputs.target_arch }}
+          PROFILE: ${{ inputs.profile }}
+          ROOTFS_SIZE_G: ${{ inputs.rootfs_size_g }}
+          INCLUDE_DOCKER: ${{ inputs.include_docker }}
+          LAN_IP: ${{ inputs.lan_ip }}
+          ENABLE_PPPOE: ${{ inputs.enable_pppoe }}
+          PPPOE_ACCOUNT: ${{ inputs.pppoe_account }}
+          PPPOE_PASSWORD: ${{ inputs.pppoe_password }}
+        run: |
+          chmod +x build.sh
+          chmod +x shell/custom-packages.sh
+          chmod +x files/etc/uci-defaults/99-custom.sh
+          ./build.sh
+
+      - name: 產生校驗碼與構建摘要
+        id: summary
+        run: |
+          cd output
+          sha256sum * > sha256sums.txt
+          echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
+          echo "- **目標設備架構**: ${{ inputs.target_arch }} (${{ inputs.profile }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **管理 IP**: ${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "#### 檔案 SHA256 校驗表" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: 上傳韌體構建產物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.profile }}-${{ inputs.rootfs_size_g }}G
+          path: output/*
