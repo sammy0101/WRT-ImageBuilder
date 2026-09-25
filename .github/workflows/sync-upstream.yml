@@ -2,8 +2,9 @@ name: 自動同步官方版本與支援設備
 
 on:
   schedule:
+    # 每週一 UTC 03:00 (台灣/香港時間 11:00) 自動檢查
     - cron: '0 3 * * 1'
-  workflow_dispatch:
+  workflow_dispatch: # 支援在 GitHub 網頁上手動點擊一鍵更新
 
 permissions:
   contents: write
@@ -14,49 +15,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 使用 SYNC_PAT 檢出專案，賦予寫入 .github/workflows 的權限
       - name: 檢出專案代碼
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SYNC_PAT }}
 
       - name: 設定 Python 環境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      # ----- 步驟 1：檢測 OpenWrt / ImmortalWrt 官方最新版本 -----
       - name: 查詢官方最新發行版本
         id: versions
         run: |
           chmod +x shell/fetch-versions.sh
           OPENWRT_LATEST=$(./shell/fetch-versions.sh openwrt latest)
           IMMORTALWRT_LATEST=$(./shell/fetch-versions.sh immortalwrt latest)
+          
           echo "openwrt_latest=$OPENWRT_LATEST" >> $GITHUB_OUTPUT
           echo "immortalwrt_latest=$IMMORTALWRT_LATEST" >> $GITHUB_OUTPUT
 
-      - name: 執行設備資料庫同步腳本
+      # ----- 步驟 2：同步設備庫並直接改寫 Action 選單 -----
+      - name: 執行設備資料庫同步與選單注入腳本
         run: |
           chmod +x shell/sync-devices.py
           python3 shell/sync-devices.py
 
+      # ----- 步驟 3：檢測變更並自動 Commit & Push -----
       - name: 檢測並自動提交推送變更
         id: git_check
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 僅檢查並提交 data/devices.json，避開 workflow 權限限制
-          if git diff --quiet data/devices.json; then
-            echo "設備資料庫已是最新，無需提交變更。"
+          # 同時檢查 devices.json 與 build-firmware.yml 的改動
+          if git diff --quiet data/devices.json .github/workflows/build-firmware.yml; then
+            echo "設備資料庫與選單已是最新，無需提交變更。"
             echo "updated=false" >> $GITHUB_OUTPUT
           else
-            echo "偵測到設備資料庫有變更，正在提交..."
-            git add data/devices.json
-            git commit -m "chore(sync): 自動同步官方最新設備資料庫 [skip ci]"
+            echo "偵測到更新，正在提交變更至儲存庫..."
+            git add data/devices.json .github/workflows/build-firmware.yml
+            git commit -m "chore(sync): 自動同步官方最新版本與支援設備清單 [skip ci]"
             git push
             echo "updated=true" >> $GITHUB_OUTPUT
           fi
 
+      # ----- 步驟 4：產出整合報告至 Step Summary -----
       - name: 輸出整合執行摘要
         run: |
           DEVICE_COUNT=$(jq 'keys | length' data/devices.json 2>/dev/null || echo "0")
+          
           echo "## 🚀 官方上游同步報告" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🌐 官方最新正式版本" >> $GITHUB_STEP_SUMMARY
@@ -68,7 +78,7 @@ jobs:
           echo "### 📱 支援設備資料庫狀態" >> $GITHUB_STEP_SUMMARY
           echo "- **當前支援設備總數**: $DEVICE_COUNT 款" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.git_check.outputs.updated }}" = "true" ]; then
-            echo "- **更新狀態**: ✅ 已自動同步最新設備資料至 data/devices.json" >> $GITHUB_STEP_SUMMARY
+            echo "- **選單更新狀態**: ✅ 已自動同步最新設備並更新 Action 下拉選單" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- **更新狀態**: ℹ️ 目前已是最新狀態，無須變更" >> $GITHUB_STEP_SUMMARY
+            echo "- **選單更新狀態**: ℹ️ 目前已是最新狀態，無須變更" >> $GITHUB_STEP_SUMMARY
           fi
