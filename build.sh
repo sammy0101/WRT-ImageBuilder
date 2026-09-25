@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 23.05(opkg) / 24.10(opkg) / 25.12+(apk)，內建缺失套件自動剔除自癒機制
+# 支援 23.05(opkg) / 24.10(opkg) / 25.12+(apk)，支援自動轉換 VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -100,17 +100,13 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman luci-i18n-dockerman-zh-tw"
 fi
 
-# 若為 25.12+ (apk 架構)，自動防禦性剔除 opkg 專屬軟體包
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   echo "ℹ️ 檢測到當前為 25.12+ apk 世代，自動清洗 opkg 舊式依賴包..."
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
 fi
 
-# 清理多餘空格
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
-
-echo "最終包含軟體包列表:"
-echo "$PACKAGES_TO_BUILD"
+echo "最終包含軟體包列表: $PACKAGES_TO_BUILD"
 
 # 7. 帶有自動容錯自癒（Self-Healing）的打包程序
 execute_make_image() {
@@ -127,7 +123,6 @@ execute_make_image() {
     return 0
   fi
 
-  # 檢查是否為套件不存在的錯誤 (相容 apk 與 opkg 報錯特徵)
   local missing_apk=$(grep -E '^\s+[a-zA-Z0-9_\.\-]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
   local missing_opkg=$(grep -oE "Unknown package '[^']+'" "$log_tmp" | cut -d"'" -f2 | tr '\n' ' ')
   local missing_opkg2=$(grep -oE "Cannot install package [^.]+" "$log_tmp" | awk '{print $NF}' | tr '\n' ' ')
@@ -165,5 +160,25 @@ execute_make_image() {
 
 execute_make_image "$PACKAGES_TO_BUILD"
 
-echo "✓ 韌體已生成於: $OUTPUT_DIR"
+# 8. 自動轉換 VMware .vmdk 虛擬磁碟格式 (僅限包含 combined 映像的 x86 系列)
+if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
+  echo ""
+  echo "=========================================================="
+  echo "  正在將 x86 映像轉換為 VMware (.vmdk) 格式..."
+  echo "=========================================================="
+  for img_gz in "$OUTPUT_DIR"/*combined*.img.gz; do
+    [ -f "$img_gz" ] || continue
+    base_name=$(basename "$img_gz" .img.gz)
+    raw_tmp="/tmp/${base_name}.img"
+    vmdk_target="$OUTPUT_DIR/${base_name}.vmdk"
+
+    echo "轉換中: $base_name.img.gz -> $base_name.vmdk"
+    gzip -dc "$img_gz" > "$raw_tmp"
+    qemu-img convert -f raw -O vmdk "$raw_tmp" "$vmdk_target"
+    rm -f "$raw_tmp"
+  done
+  echo "✓ VMware .vmdk 虛擬磁碟轉換完成！"
+fi
+
+echo "✓ 產物目錄清單:"
 ls -lh "$OUTPUT_DIR"
