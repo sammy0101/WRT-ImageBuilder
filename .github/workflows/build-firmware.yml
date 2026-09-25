@@ -96,17 +96,17 @@ jobs:
     name: 構建韌體 (${{ inputs.firmware_type }})
     runs-on: ubuntu-24.04
     permissions:
-      contents: write # 賦予發布 GitHub Release 的必要寫入權限
+      contents: write
 
     steps:
       - name: 檢出專案代碼
         uses: actions/checkout@v4
 
-      - name: 安裝編譯相依套件
+      - name: 安裝編譯相依套件 (含 qemu-utils 轉換工具)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git \
-            gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl
+            gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl qemu-utils
 
       - name: 解析與自動讀取韌體版本
         id: resolve_version
@@ -149,7 +149,6 @@ jobs:
           cd output
           sha256sum * > sha256sums.txt
           
-          # 寫入 GitHub Step Summary
           echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
           echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
@@ -161,7 +160,6 @@ jobs:
           cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           
-          # 將校驗碼多行傳遞給 Release 說明使用
           echo "hashes<<EOF" >> $GITHUB_OUTPUT
           cat sha256sums.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -172,10 +170,7 @@ jobs:
           name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
           path: output/*
 
-      # ==============================================================================
-      # 自動正式發布至 GitHub Releases (永久保存)
-      # ==============================================================================
-      - name: 自動發布至 GitHub Releases
+      - name: 自動發布至 GitHub Releases (永久保存)
         uses: softprops/action-gh-release@v2
         if: ${{ success() }}
         with:
@@ -188,7 +183,7 @@ jobs:
             - **硬體設備**: ${{ inputs.device_model }}
             - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
             - **預設 LAN IP**: `${{ inputs.lan_ip }}`
-            - **繁體中文**: 已預載繁體中文 (zh-tw)
+            - **虛擬化支援**: 包含原廠 `.img.gz` 與 VMware 專用 `.vmdk`
 
             #### 🔒 SHA256 檔案校驗碼
             ```text
