@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# 核心構建程式: build.sh (動態自 data/devices.json 解析 Target 與 Profile)
+# 核心構建程式: build.sh
+# 支援 23.05(opkg) / 24.10(opkg) / 25.12+(apk)，內建缺失套件自動剔除自癒機制
 # ==============================================================================
 set -euo pipefail
 
 FW_TYPE="${FIRMWARE_TYPE:-ImmortalWrt}"
-FW_VER="${VERSION:-24.10.0}"
+FW_VER="${VERSION:-25.12.2}"
 SELECTED_DEVICE="${DEVICE_MODEL:-x86_generic}"
 SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
 TARGET_IP="${LAN_IP:-192.168.100.1}"
 PPPOE_EN="${ENABLE_PPPOE:-false}"
 
-# 1. 取得設備唯一標識鍵 (例: "redmi_ax6000: [紅米]..." -> "redmi_ax6000")
+# 1. 取得設備唯一標識鍵
 DEVICE_KEY=$(echo "$SELECTED_DEVICE" | cut -d':' -f1 | tr -d ' ')
 DEVICES_FILE="$PWD/data/devices.json"
 
@@ -24,7 +25,6 @@ if [ -f "$DEVICES_FILE" ]; then
   PROFILE_NAME=$(jq -r --arg k "$DEVICE_KEY" '.[$k].profile // empty' "$DEVICES_FILE")
 fi
 
-# 防呆降級回退
 if [ -z "$TARGET_INPUT" ] || [ -z "$PROFILE_NAME" ]; then
   echo "警告: 在 devices.json 未能找到 '$DEVICE_KEY'，預設回退至 x86/64 generic"
   TARGET_INPUT="x86/64"
@@ -81,10 +81,8 @@ cd "$EXTRACTED_DIR"
 mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$PWD/../../files/"* files/
 
-# 注入自訂 LAN IP 變數
 echo "CUSTOM_LAN_IP=\"$TARGET_IP\"" > files/etc/custom_lan_ip
 
-# 注入 PPPoE 設定
 if [[ "$PPPOE_EN" == "true" ]]; then
   cat <<EOF > files/etc/config/pppoe-settings
 ENABLE_PPPOE="yes"
@@ -93,7 +91,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 整合軟體包清單
+# 6. 整合軟體包清單與版本過濾
 source "$PWD/../../shell/custom-packages.sh"
 PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
 
@@ -102,17 +100,70 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman luci-i18n-dockerman-zh-tw"
 fi
 
+# 若為 25.12+ (apk 架構)，自動防禦性剔除 opkg 專屬軟體包
+if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
+  echo "ℹ️ 檢測到當前為 25.12+ apk 世代，自動清洗 opkg 舊式依賴包..."
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
+fi
+
+# 清理多餘空格
+PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
+
 echo "最終包含軟體包列表:"
 echo "$PACKAGES_TO_BUILD"
 
-# 7. 執行打包構建
-echo "開始編譯產生固件映像檔..."
-make image \
-  PROFILE="$PROFILE_NAME" \
-  PACKAGES="$PACKAGES_TO_BUILD" \
-  FILES="files" \
-  ROOTFS_PARTSIZE="$PARTSIZE_MB" \
-  BIN_DIR="$OUTPUT_DIR"
+# 7. 帶有自動容錯自癒（Self-Healing）的打包程序
+execute_make_image() {
+  local current_pkgs="$1"
+  local log_tmp="/tmp/imagebuilder_build.log"
+
+  echo "開始編譯產生固件映像檔..."
+  if make image \
+    PROFILE="$PROFILE_NAME" \
+    PACKAGES="$current_pkgs" \
+    FILES="files" \
+    ROOTFS_PARTSIZE="$PARTSIZE_MB" \
+    BIN_DIR="$OUTPUT_DIR" 2>&1 | tee "$log_tmp"; then
+    return 0
+  fi
+
+  # 檢查是否為套件不存在的錯誤 (相容 apk 與 opkg 報錯特徵)
+  local missing_apk=$(grep -E '^\s+[a-zA-Z0-9_\.\-]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
+  local missing_opkg=$(grep -oE "Unknown package '[^']+'" "$log_tmp" | cut -d"'" -f2 | tr '\n' ' ')
+  local missing_opkg2=$(grep -oE "Cannot install package [^.]+" "$log_tmp" | awk '{print $NF}' | tr '\n' ' ')
+
+  local all_missing=$(echo "$missing_apk $missing_opkg $missing_opkg2" | xargs -n1 2>/dev/null | sort -u | xargs 2>/dev/null || echo "")
+
+  if [ -n "$all_missing" ]; then
+    echo ""
+    echo "=========================================================="
+    echo "⚠️ 偵測到當前官方軟體源缺少以下軟體包:"
+    echo "   $all_missing"
+    echo "🔄 觸發自動自癒機制：剔除缺失套件並自動重新構建..."
+    echo "=========================================================="
+
+    local cleaned_pkgs="$current_pkgs"
+    for pkg in $all_missing; do
+      cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )$pkg( |\$)/ /g")
+    done
+    cleaned_pkgs=$(echo "$cleaned_pkgs" | xargs)
+
+    echo "修正後的軟體包列表: $cleaned_pkgs"
+    echo ""
+
+    make image \
+      PROFILE="$PROFILE_NAME" \
+      PACKAGES="$cleaned_pkgs" \
+      FILES="files" \
+      ROOTFS_PARTSIZE="$PARTSIZE_MB" \
+      BIN_DIR="$OUTPUT_DIR"
+    return $?
+  fi
+
+  return 1
+}
+
+execute_make_image "$PACKAGES_TO_BUILD"
 
 echo "✓ 韌體已生成於: $OUTPUT_DIR"
 ls -lh "$OUTPUT_DIR"
