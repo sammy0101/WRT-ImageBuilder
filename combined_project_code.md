@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 07:04:10 UTC 2026
+Generated on: Sun Sep 27 07:07:04 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -768,15 +768,15 @@ on:
         description: '選擇韌體系統分支'
         required: true
         type: choice
-        default: 'ImmortalWrt'
+        default: 'OpenWrt'
         options:
-          - 'ImmortalWrt'
           - 'OpenWrt'
+          - 'ImmortalWrt'
 
       luci_version:
-        description: '韌體版本 (輸入 auto 或 latest 自動抓取最新正式版；亦可手動輸入版本，例如: 25.12.2, 24.10.0, 23.05.5)'
+        description: '韌體版本 (輸入 auto 或 latest 自動抓取最新正式版；亦可自訂輸入如: 25.12.5, 24.10.0)'
         required: true
-        default: 'auto'
+        default: '25.12.5'
         type: string
 
       rootfs_size_g:
@@ -822,20 +822,41 @@ on:
           - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621)'
           # --- AUTO_DEVICES_END ---
 
+      # ==============================================================================
+      # 旁路由與網路配置
+      # ==============================================================================
+      is_bypass_router:
+        description: '【旁路由開關】是否作為旁路由 / 二級網關模式 (勾選啟用，主路由請保持不勾選)'
+        required: false
+        type: boolean
+        default: true
+
+      lan_ip:
+        description: '本機 LAN IP (旁路由請填寫與主路由同網段的固定 IP，例如: 192.168.86.111)'
+        required: false
+        default: '192.168.86.111'
+        type: string
+
+      gateway_ip:
+        description: '【旁路由專用】主路由器網關 IP (旁路由需指向主路由 IP，例如: 192.168.86.1)'
+        required: false
+        default: '192.168.86.1'
+        type: string
+
+      dns_servers:
+        description: '【旁路由專用】自訂 DNS 伺服器 (多個請用空格分開，例如: 192.168.86.1 8.8.8.8)'
+        required: false
+        default: '192.168.86.1 8.8.8.8'
+        type: string
+
       include_docker:
         description: '是否整合 Docker 與 Dockerman 容器介面'
         required: false
         type: boolean
         default: false
 
-      lan_ip:
-        description: '自訂管理 LAN 端 IP (多網口機型預設 192.168.100.1)'
-        required: false
-        default: '192.168.100.1'
-        type: string
-
       enable_pppoe:
-        description: '是否啟用 WAN 端 PPPoE 撥號'
+        description: '【主路由專用】是否啟用 WAN 端 PPPoE 撥號 (旁路由請保持 false)'
         required: false
         type: boolean
         default: false
@@ -900,7 +921,10 @@ jobs:
           DEVICE_MODEL: ${{ inputs.device_model }}
           ROOTFS_SIZE_G: ${{ inputs.rootfs_size_g }}
           INCLUDE_DOCKER: ${{ inputs.include_docker }}
+          IS_BYPASS_ROUTER: ${{ inputs.is_bypass_router }}
           LAN_IP: ${{ inputs.lan_ip }}
+          GATEWAY_IP: ${{ inputs.gateway_ip }}
+          DNS_SERVERS: ${{ inputs.dns_servers }}
           ENABLE_PPPOE: ${{ inputs.enable_pppoe }}
           PPPOE_ACCOUNT: ${{ inputs.pppoe_account }}
           PPPOE_PASSWORD: ${{ inputs.pppoe_password }}
@@ -927,7 +951,15 @@ jobs:
           echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **設備型號**: ${{ inputs.device_model }}" >> $GITHUB_STEP_SUMMARY
           echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
-          echo "- **管理網址**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.is_bypass_router }}" = "true" ]; then
+            echo "- **網路模式**: 🛡️ 旁路由 / 網關模式 (已關閉 DHCP，啟用 NAT 偽裝)" >> $GITHUB_STEP_SUMMARY
+            echo "- **旁路由 IP**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **主路由網關**: ${{ inputs.gateway_ip }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **DNS 伺服器**: ${{ inputs.dns_servers }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **網路模式**: 🌐 標準主路由模式 (DHCP 啟用)" >> $GITHUB_STEP_SUMMARY
+            echo "- **管理網址**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "- **預設帳號**: \`root\`" >> $GITHUB_STEP_SUMMARY
           echo "- **預設密碼**: \`無密碼（直接留空登入）\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -953,7 +985,10 @@ jobs:
           name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
           path: output/*
 
-      - name: 自動發布至 GitHub Releases (永久保存)
+      # ==============================================================================
+      # 自動正式發布至 GitHub Releases (永久保存)
+      # ==============================================================================
+      - name: 自動發布至 GitHub Releases
         uses: softprops/action-gh-release@v2
         if: ${{ success() }}
         with:
@@ -965,10 +1000,13 @@ jobs:
             - **系統版本**: ${{ steps.resolve_version.outputs.version }}
             - **硬體設備**: ${{ inputs.device_model }}
             - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
-            - **虛擬化支援**: 包含原廠 `.img.gz`、VMware `.vmdk`、Hyper-V `.vhdx` 與安裝引導 `.iso`
+            - **網路模式**: ${{ inputs.is_bypass_router && '🛡️ 旁路由模式 (DHCP已關閉，NAT偽裝已開啟)' || '🌐 主路由模式' }}
+            - **管理網址 (LAN IP)**: `http://${{ inputs.lan_ip }}`
+            ${{ inputs.is_bypass_router && format('- **主路由網關 (Gateway)**: `{0}`\n- **自訂 DNS**: `{1}`', inputs.gateway_ip, inputs.dns_servers) || '' }}
 
             ### 🔑 預設登入認證資訊
-            - **管理網址**: `http://${{ inputs.lan_ip }}`（單網卡設備請查詢上級 DHCP IP）
+            - **Web 管理網址**: `http://${{ inputs.lan_ip }}`
+            - **DAED 控制面板**: `http://${{ inputs.lan_ip }}:2023` (若有啟用 DAED)
             - **使用者名稱 (User)**: `root`
             - **登入密碼 (Password)**: `無密碼（密碼欄留空，直接按登入即可）`
 
