@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 旁路由引導模式 + OpenWrt 原版預裝 DAED (自帶 LuCI 選單與二進制)
+# 支援 旁路由引導模式 + 官方原裝英文 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -121,17 +121,10 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【DAED 與 Argon 完整注入】
-DAED_PREINSTALLED=false
+# 6. 第三方套件處理 (Argon 主題)
 mkdir -p packages
 
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-  echo ""
-  echo "=========================================================="
-  echo "  正在處理 OpenWrt 第三方外掛 (DAED & Argon)..."
-  echo "=========================================================="
-
-  # (A) 下載相容的 luci-theme-argon
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
     echo "下載 luci-theme-argon 安裝包..."
     if [ "$is_apk" = true ]; then
@@ -142,72 +135,7 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     wget -q -c --timeout=20 --tries=3 "$ARGON_URL" -P packages/ || true
   fi
 
-  # (B) daed 與 luci-app-daed：真·官方倉庫精準下載與提取
-  if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
-    echo "正在下載 DAED 核心與官方 LuCI 介面組件..."
-    mkdir -p /tmp/daed_pkgs files/usr/bin files/etc/init.d files/etc/daed
-
-    if [ "$is_apk" = true ]; then
-      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
-      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed-1.4-r1-openwrt-25.12.apk"
-    else
-      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed_2026.07.31-r1_x86_64-openwrt-24.10.ipk"
-      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
-    fi
-
-    echo "下載 DAED 核心: $DAED_BIN_URL"
-    curl -fL -sS --connect-timeout 30 --retry 3 "$DAED_BIN_URL" -o /tmp/daed_pkgs/daed.pkg || echo "⚠️ 下載 DAED 核心失敗"
-
-    echo "下載 DAED LuCI: $DAED_LUCI_URL"
-    curl -fL -sS --connect-timeout 30 --retry 3 "$DAED_LUCI_URL" -o /tmp/daed_pkgs/luci.pkg || echo "⚠️ 下載 DAED LuCI 失敗"
-
-    echo "檢驗暫存檔案大小:"
-    ls -lh /tmp/daed_pkgs/ || true
-
-    echo "正在使用 ImageBuilder 官方 host apk 工具提取組件..."
-    for p_file in /tmp/daed_pkgs/*.pkg; do
-      [ -s "$p_file" ] || continue
-      
-      # 調用編譯器自帶的 host apk 解包
-      if [ "$is_apk" = true ] && [ -x "staging_dir/host/bin/apk" ]; then
-        echo "官方工具提取: $(basename "$p_file")..."
-        ./staging_dir/host/bin/apk extract --allow-untrusted --destination "$PWD/files/" "$p_file" || true
-      fi
-      
-      # 針對 ipk 或 7z 備用解包
-      if command -v 7z >/dev/null 2>&1; then
-        mkdir -p /tmp/7z_ext
-        7z x -y "$p_file" -o/tmp/7z_ext/ >/dev/null 2>&1 || true
-        if [ -f "/tmp/7z_ext/data.tar.gz" ]; then
-          tar -xzf /tmp/7z_ext/data.tar.gz -C "$PWD/files/" 2>/dev/null || true
-        fi
-        cp -rf /tmp/7z_ext/* "$PWD/files/" 2>/dev/null || true
-        rm -rf /tmp/7z_ext
-      fi
-    done
-
-    rm -rf files/.PKGINFO files/.SIGN.* files/control.tar.gz files/data.tar.gz files/debian-binary /tmp/daed_pkgs 2>/dev/null || true
-    chmod +x files/usr/bin/daed files/etc/init.d/daed 2>/dev/null || true
-
-    # 實體檢驗
-    if [ -f "files/usr/bin/daed" ]; then
-      echo "✓【驗證成功】/usr/bin/daed 核心二進制已寫入！大小: $(ls -lh files/usr/bin/daed | awk '{print $5}')"
-      DAED_PREINSTALLED=true
-    else
-      echo "❌【警告】未能成功解出 files/usr/bin/daed"
-    fi
-
-    if [ -f "files/usr/share/luci/menu.d/luci-app-daed.json" ]; then
-      echo "✓【驗證成功】LuCI 官方選單定義 (luci-app-daed.json) 已就位！"
-    fi
-
-    PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD kmod-tun ca-bundle"
-    PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/daed//g; s/luci-app-daed//g; s/vmlinux-btf//g')
-  fi
-
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
-  echo "=========================================================="
-  echo ""
 fi
 
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
@@ -226,11 +154,7 @@ execute_make_image() {
     ROOTFS_PARTSIZE="$PARTSIZE_MB" \
     BIN_DIR="$OUTPUT_DIR" 2>&1 | tee "$log_tmp"; then
     
-    local record_pkgs="$current_pkgs"
-    if [ "$DAED_PREINSTALLED" = true ]; then
-      record_pkgs="$record_pkgs daed"
-    fi
-    echo "$record_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
+    echo "$current_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
     return 0
   fi
 
@@ -253,7 +177,6 @@ execute_make_image() {
     local cleaned_pkgs="$current_pkgs"
     for item in $all_culprits; do
       cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )$item( |\$)/ /g")
-      cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )luci-app-$item( |\$)/ /g")
       rm -f packages/*"$item"* 2>/dev/null || true
     done
     cleaned_pkgs=$(echo "$cleaned_pkgs" | xargs)
@@ -264,11 +187,7 @@ execute_make_image() {
       FILES="files" \
       ROOTFS_PARTSIZE="$PARTSIZE_MB" \
       BIN_DIR="$OUTPUT_DIR"; then
-      local record_pkgs="$cleaned_pkgs"
-      if [ "$DAED_PREINSTALLED" = true ]; then
-        record_pkgs="$record_pkgs daed"
-      fi
-      echo "$record_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
+      echo "$cleaned_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
       return 0
     fi
     return 1
