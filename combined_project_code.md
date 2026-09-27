@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 03:28:33 UTC 2026
+Generated on: Sun Sep 27 03:28:58 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -910,6 +910,7 @@ jobs:
       - name: 執行韌體生成構建
         id: run_builder
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FIRMWARE_TYPE: ${{ inputs.firmware_type }}
           VERSION: ${{ steps.resolve_version.outputs.version }}
           DEVICE_MODEL: ${{ inputs.device_model }}
@@ -931,14 +932,12 @@ jobs:
           cd output
           sha256sum * > sha256sums.txt
           
-          # 將成功安裝的外掛清單排版為 Markdown 格式
           if [ -f custom_packages.txt ]; then
             PKGS_MD=$(sed 's/^/- `/' custom_packages.txt | sed 's/$/`/')
           else
             PKGS_MD="- 官方標準基礎組件"
           fi
           
-          # 寫入 GitHub Step Summary
           echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
           echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
@@ -956,7 +955,6 @@ jobs:
           cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           
-          # 傳遞多行變數給 Release Step 使用
           echo "hashes<<EOF" >> $GITHUB_OUTPUT
           cat sha256sums.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -971,10 +969,7 @@ jobs:
           name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
           path: output/*
 
-      # ==============================================================================
-      # 自動正式發布至 GitHub Releases (永久保存)
-      # ==============================================================================
-      - name: 自動發布至 GitHub Releases
+      - name: 自動發布至 GitHub Releases (永久保存)
         uses: softprops/action-gh-release@v2
         if: ${{ success() }}
         with:
