@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 OpenWrt 原版預裝 DAED + 官方原裝英文 + 自動轉換 VMware .vmdk
+# 支援 旁路由引導模式 + OpenWrt 原版預裝 DAED + 官方原裝英文 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -12,7 +12,10 @@ FW_VER="${VERSION:-25.12.5}"
 SELECTED_DEVICE="${DEVICE_MODEL:-x86_generic}"
 SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
+IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
 TARGET_IP="${LAN_IP:-192.168.100.1}"
+GW_IP="${GATEWAY_IP:-192.168.100.1}"
+DNS_IPS="${DNS_SERVERS:-192.168.100.1 8.8.8.8}"
 PPPOE_EN="${ENABLE_PPPOE:-false}"
 
 # 1. 解析設備鍵名
@@ -40,7 +43,12 @@ echo "  系統版本: $FW_VER"
 echo "  所選設備: $DEVICE_KEY"
 echo "  目標架構 (Target): $TARGET_INPUT"
 echo "  設備代號 (Profile): $PROFILE_NAME"
-echo "  自訂 LAN IP: $TARGET_IP"
+echo "  網路模式: $([ "$IS_BYPASS" = "true" ] && echo "🛡️ 旁路由模式" || echo "🌐 主路由模式")"
+echo "  本機 LAN IP: $TARGET_IP"
+if [ "$IS_BYPASS" = "true" ]; then
+  echo "  主路由網關: $GW_IP"
+  echo "  自訂 DNS: $DNS_IPS"
+fi
 echo "  設定容量: $SIZE_IN_GB GB"
 echo "=========================================================="
 
@@ -98,7 +106,13 @@ fi
 mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$ROOT_DIR/files/"* files/
 
-echo "CUSTOM_LAN_IP=\"$TARGET_IP\"" > files/etc/custom_lan_ip
+# 寫入旁路由與網路參數設定檔
+cat <<EOF > files/etc/custom_network_config
+CUSTOM_LAN_IP="$TARGET_IP"
+IS_BYPASS_ROUTER="$IS_BYPASS"
+GATEWAY_IP="$GW_IP"
+DNS_SERVERS="$DNS_IPS"
+EOF
 
 if [[ "$PPPOE_EN" == "true" ]]; then
   cat <<EOF > files/etc/config/pppoe-settings
@@ -118,7 +132,7 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   echo "  正在處理 OpenWrt 第三方外掛 (DAED & Argon)..."
   echo "=========================================================="
 
-  # (A) luci-theme-argon 下載放入本地倉庫
+  # (A) 下載相容的 luci-theme-argon
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
     echo "下載 luci-theme-argon 安裝包..."
     if [ "$is_apk" = true ]; then
@@ -145,7 +159,7 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     wget -q -c "$DAED_BIN_URL" -O /tmp/daed_dl/daed.apk || true
     wget -q -c "$DAED_LUCI_URL" -O /tmp/daed_dl/luci.apk || true
 
-    # 使用 Python 提取 apk 內所有流段 (解決一般 tar 無法提取 apk 資料流的問題)
+    # 使用 Python 提取 apk 內所有流段
     python3 - <<'EOF'
 import os, gzip, tarfile, io
 
@@ -176,11 +190,10 @@ for fname in os.listdir(dl_dir):
         print(f"Error extracting {fname}: {e}")
 EOF
 
-    # 複製所有檔案進 files/
     cp -rf /tmp/daed_ext/* files/ 2>/dev/null || true
     rm -rf /tmp/daed_dl /tmp/daed_ext
 
-    # 確保核心二進制存在 (若提取失敗則採用官方獨立二進制兜底)
+    # 備用獨立版二進制兜底
     if [ ! -f "files/usr/bin/daed" ]; then
       echo "正在下載官方獨立版 daed 二進制檔案兜底..."
       wget -q -c "https://github.com/daeuniverse/daed/releases/download/v0.8.0/daed-linux-x86_64.tar.gz" -O /tmp/daed.tar.gz || true
@@ -226,9 +239,7 @@ INITSCRIPT
       DAED_PREINSTALLED=true
     fi
 
-    # 補充官方運行時依賴
     PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD kmod-tun ca-bundle"
-    # 從編譯命令中移除 daed，避免 apk 依賴報錯
     PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/daed//g; s/luci-app-daed//g; s/vmlinux-btf//g')
   fi
 
