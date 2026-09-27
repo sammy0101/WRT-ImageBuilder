@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 07:14:57 UTC 2026
+Generated on: Sun Sep 27 07:15:37 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -999,7 +999,76 @@ jobs:
           
           echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
           echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **固件版本**: ${{ steps.resolve_version.output
+          echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **設備型號**: ${{ inputs.device_model }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.is_bypass_router }}" = "true" ]; then
+            echo "- **網路模式**: 🛡️ 旁路由 / 網關模式 (已關閉 DHCP，啟用 NAT 偽裝)" >> $GITHUB_STEP_SUMMARY
+            echo "- **旁路由 IP**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **主路由網關**: ${{ inputs.gateway_ip }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **DNS 伺服器**: ${{ inputs.dns_servers }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **網路模式**: 🌐 標準主路由模式 (DHCP 啟用)" >> $GITHUB_STEP_SUMMARY
+            echo "- **管理網址**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **預設帳號**: \`root\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **預設密碼**: \`無密碼（直接留空登入）\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📦 本次自訂集成軟體包" >> $GITHUB_STEP_SUMMARY
+          echo "$PKGS_MD" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 🔒 檔案 SHA256 校驗表" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          
+          echo "hashes<<EOF" >> $GITHUB_OUTPUT
+          cat sha256sums.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "pkgs_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$PKGS_MD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 上傳韌體構建產物至 Artifacts (保留90天)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
+          path: output/*
+
+      # ==============================================================================
+      # 自動正式發布至 GitHub Releases (永久保存)
+      # ==============================================================================
+      - name: 自動發布至 GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: ${{ success() }}
+        with:
+          tag_name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-build${{ github.run_number }}
+          name: ${{ inputs.firmware_type }} ${{ steps.resolve_version.outputs.version }} (${{ inputs.device_model }})
+          body: |
+            ### 🚀 韌體發布資訊
+            - **韌體系統**: ${{ inputs.firmware_type }}
+            - **系統版本**: ${{ steps.resolve_version.outputs.version }}
+            - **硬體設備**: ${{ inputs.device_model }}
+            - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
+            - **網路模式**: ${{ inputs.is_bypass_router && '🛡️ 旁路由模式 (DHCP已關閉，NAT偽裝已開啟)' || '🌐 主路由模式' }}
+            - **管理網址 (LAN IP)**: `http://${{ inputs.lan_ip }}`
+            ${{ inputs.is_bypass_router && format('- **主路由網關 (Gateway)**: `{0}`\n- **自訂 DNS**: `{1}`', inputs.gateway_ip, inputs.dns_servers) || '' }}
+
+            ### 🔑 預設登入認證資訊
+            - **Web 管理網址**: `http://${{ inputs.lan_ip }}`
+            - **DAED 控制面板**: `http://${{ inputs.lan_ip }}:2023` (若有啟用 DAED)
+            - **使用者名稱 (User)**: `root`
+            - **登入密碼 (Password)**: `無密碼（密碼欄留空，直接按登入即可）`
+
+            ### 📦 本次自訂集成軟體包清單
+            ${{ steps.summary.outputs.pkgs_list }}
+
+            #### 🔒 SHA256 檔案校驗碼
+            ```text
+            ${{ steps.summary.outputs.hashes }}
+            ```
+          files: output/*
 
 ````
 
