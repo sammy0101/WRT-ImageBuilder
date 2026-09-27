@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 03:05:23 UTC 2026
+Generated on: Sun Sep 27 03:05:48 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -746,7 +746,7 @@ on:
           - 'OpenWrt'
 
       luci_version:
-        description: '韌體版本 (輸入 auto 或 latest 自動抓取最新正式版)'
+        description: '韌體版本 (輸入 auto 或 latest 自動抓取最新正式版；亦可手動輸入版本，例如: 25.12.2, 24.10.0, 23.05.5)'
         required: true
         default: 'auto'
         type: string
@@ -766,170 +766,32 @@ on:
           # --- AUTO_DEVICES_START ---
           - 'x86_generic: [x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)'
           - 'x86_legacy: [x86] 傳統 BIOS 引導舊主機 (Legacy MBR)'
-          - 'nanopi_r2s: [友善] NanoPi R2S (雙千兆經典軟路由)'
-          - 'nanopi_r2c: [友善] NanoPi R2C (雙千兆軟路由)'
-          - 'nanopi_r4s: [友善] NanoPi R4S (RK3399 高效軟路由)'
-          - 'nanopi_r4se: [友善] NanoPi R4SE (內建 eMMC 高效軟路由)'
-          - 'nanopi_r5s: [友善] NanoPi R5S (三網口 雙 2.5G 軟路由)'
-          - 'nanopi_r5c: [友善] NanoPi R5C (雙 2.5G 迷你軟路由)'
-          - 'nanopi_r6s: [友善] NanoPi R6S (RK3588 雙 2.5G 旗艦軟路由)'
-          - 'nanopi_r6c: [友善] NanoPi R6C (RK3588 旗艦軟路由)'
+          - 'nanopi_r2s: [NanoPi] 友善 NanoPi R2S'
+          - 'nanopi_r2c: [NanoPi] 友善 NanoPi R2C'
+          - 'nanopi_r4s: [NanoPi] 友善 NanoPi R4S'
+          - 'nanopi_r4se: [NanoPi] 友善 NanoPi R4SE'
+          - 'nanopi_r5s: [NanoPi] 友善 NanoPi R5S'
+          - 'nanopi_r5c: [NanoPi] 友善 NanoPi R5C'
+          - 'nanopi_r6s: [NanoPi] 友善 NanoPi R6S'
+          - 'nanopi_r6c: [NanoPi] 友善 NanoPi R6C'
           - 'rpi_4: [樹莓派] Raspberry Pi 4 Model B / CM4'
-          - 'rpi_5: [樹莓派] Raspberry Pi 5 (新一代高效單板電腦)'
+          - 'rpi_5: [樹莓派] Raspberry Pi 5'
           - 'rpi_3: [樹莓派] Raspberry Pi 3 Model B / B+'
-          - 'redmi_ax6000: [紅米] Redmi AX6000 (MT7986 旗艦家用路由)'
-          - 'xiaomi_ax3000t: [小米] 小米路由器 AX3000T (高 CP 值 Wi-Fi 6)'
-          - 'xiaomi_wr30u: [小米] 小米路由器 WR30U (一般版 / 電信運營商版)'
+          - 'redmi_ax6000: [紅米] Redmi AX6000 (MT7986)'
+          - 'xiaomi_ax3000t: [小米] 小米路由器 AX3000T'
+          - 'xiaomi_wr30u: [小米] 小米路由器 WR30U'
           - 'redmi_ax3200: [紅米] Redmi AX3200 / 小米 AX6S'
-          - 'xiaomi_4a_gigabit: [小米] 小米路由器 4A 千兆版 (MT7621)'
-          - 'glinet_mt3000: [GL.iNet] GL-MT3000 (Beryl AX 便攜旅行路由)'
-          - 'glinet_mt6000: [GL.iNet] GL-MT6000 (Flint 2 雙 2.5G 旗艦路由)'
-          - 'glinet_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2 雙網口網關)'
-          - 'glinet_axt1800: [GL.iNet] GL-AXT1800 (Slate AX 三頻旅行路由)'
-          - 'glinet_ax1800: [GL.iNet] GL-AX1800 (Flint 雙頻 Wi-Fi 6 路由)'
-          - 'asus_tuf_ax4200: [華碩 ASUS] asus_tuf-ax4200 (mediatek/filogic)'
-          - 'tplink_xdr6088: [TP-Link] TL-XDR6088 (雙 2.5G 旗艦 Wi-Fi 6)'
-          - 'qihoo_360t7: [360] qihoo_360t7 (mediatek/filogic)'
-          - 'jcg_q30pro: [捷稀] JCG Q30 Pro (MT7981 Wi-Fi 6)'
-          - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621 經典千兆神機)'
-          - 'asus_rt_ac3100: [華碩 ASUS] asus_rt-ac3100 (bcm53xx/generic)'
-          - 'asus_rt_ac56u: [華碩 ASUS] asus_rt-ac56u (bcm53xx/generic)'
-          - 'asus_rt_ac68u: [華碩 ASUS] asus_rt-ac68u (bcm53xx/generic)'
-          - 'asus_rt_ac87u: [華碩 ASUS] asus_rt-ac87u (bcm53xx/generic)'
-          - 'asus_rt_ac88u: [華碩 ASUS] asus_rt-ac88u (bcm53xx/generic)'
-          - 'asus_rt_n18u: [華碩 ASUS] asus_rt-n18u (bcm53xx/generic)'
-          - 'xiaomi_redmi_router_ax6s: [小米] xiaomi_redmi-router-ax6s (mediatek/mt7622)'
-          - 'asus_rt_ax59u: [華碩 ASUS] asus_rt-ax59u (mediatek/filogic)'
-          - 'asus_tuf_ax6000: [華碩 ASUS] asus_tuf-ax6000 (mediatek/filogic)'
-          - 'glinet_gl_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2 雙網口網關)'
-          - 'glinet_gl_mt3000: [GL.iNet] GL-MT3000 (Beryl AX 便攜旅行路由)'
-          - 'glinet_gl_mt6000: [GL.iNet] GL-MT6000 (Flint 2 雙 2.5G 旗艦路由)'
-          - 'glinet_gl_x3000: [GL.iNet] glinet_gl-x3000 (mediatek/filogic)'
-          - 'glinet_gl_xe3000: [GL.iNet] glinet_gl-xe3000 (mediatek/filogic)'
-          - 'xiaomi_mi_router_ax3000t: [小米] 小米路由器 AX3000T (高 CP 值 Wi-Fi 6)'
-          - 'xiaomi_mi_router_ax3000t_ubootmod: [小米] xiaomi_mi-router-ax3000t-ubootmod (mediatek/filogic)'
-          - 'xiaomi_mi_router_wr30u_stock: [小米] xiaomi_mi-router-wr30u-stock (mediatek/filogic)'
-          - 'xiaomi_mi_router_wr30u_ubootmod: [小米] xiaomi_mi-router-wr30u-ubootmod (mediatek/filogic)'
-          - 'xiaomi_redmi_router_ax6000_stock: [小米] xiaomi_redmi-router-ax6000-stock (mediatek/filogic)'
-          - 'xiaomi_redmi_router_ax6000_ubootmod: [小米] xiaomi_redmi-router-ax6000-ubootmod (mediatek/filogic)'
-          - 'asus_onhub: [華碩 ASUS] asus_onhub (ipq806x/chromium)'
-          - 'xiaomi_mi_router_hd: [小米] xiaomi_mi-router-hd (ipq806x/generic)'
-          - 'rpi_2: [樹莓派] rpi-2 (bcm27xx/bcm2709)'
-          - 'rpi: [樹莓派] rpi (bcm27xx/bcm2708)'
-          - 'friendlyarm_nanopc_t4: [友善 NanoPi] friendlyarm_nanopc-t4 (rockchip/armv8)'
-          - 'friendlyarm_nanopc_t6: [友善 NanoPi] friendlyarm_nanopc-t6 (rockchip/armv8)'
-          - 'friendlyarm_nanopi_r2c: [友善] NanoPi R2C (雙千兆軟路由)'
-          - 'friendlyarm_nanopi_r2c_plus: [友善 NanoPi] friendlyarm_nanopi-r2c-plus (rockchip/armv8)'
-          - 'friendlyarm_nanopi_r2s: [友善] NanoPi R2S (雙千兆經典軟路由)'
-          - 'friendlyarm_nanopi_r3s: [友善 NanoPi] friendlyarm_nanopi-r3s (rockchip/armv8)'
-          - 'friendlyarm_nanopi_r4s: [友善] NanoPi R4S (RK3399 高效軟路由)'
-          - 'friendlyarm_nanopi_r4s_enterprise: [友善 NanoPi] friendlyarm_nanopi-r4s-enterprise (rockchip/armv8)'
-          - 'friendlyarm_nanopi_r4se: [友善] NanoPi R4SE (內建 eMMC 高效軟路由)'
-          - 'friendlyarm_nanopi_r5c: [友善] NanoPi R5C (雙 2.5G 迷你軟路由)'
-          - 'friendlyarm_nanopi_r5s: [友善] NanoPi R5S (三網口 雙 2.5G 軟路由)'
-          - 'friendlyarm_nanopi_r6c: [友善] NanoPi R6C (RK3588 旗艦軟路由)'
-          - 'friendlyarm_nanopi_r6s: [友善] NanoPi R6S (RK3588 雙 2.5G 旗艦軟路由)'
-          - 'glinet_gl_mv1000: [GL.iNet] glinet_gl-mv1000 (mvebu/cortexa53)'
-          - 'asus_rt_ax89x: [Asus] asus_rt-ax89x (qualcommax/ipq807x)'
-          - 'redmi_ax6: [紅米] redmi_ax6 (qualcommax/ipq807x)'
-          - 'redmi_ax6_stock: [紅米] redmi_ax6-stock (qualcommax/ipq807x)'
-          - 'xiaomi_ax3600: [小米] xiaomi_ax3600 (qualcommax/ipq807x)'
-          - 'xiaomi_ax3600_stock: [小米] xiaomi_ax3600-stock (qualcommax/ipq807x)'
-          - 'xiaomi_ax9000: [小米] xiaomi_ax9000 (qualcommax/ipq807x)'
-          - 'asus_rp_n53: [華碩 ASUS] asus_rp-n53 (ramips/mt7620)'
-          - 'asus_rt_ac51u: [華碩 ASUS] asus_rt-ac51u (ramips/mt7620)'
-          - 'asus_rt_ac54u: [華碩 ASUS] asus_rt-ac54u (ramips/mt7620)'
-          - 'asus_rt_n14u: [華碩 ASUS] asus_rt-n14u (ramips/mt7620)'
-          - 'glinet_gl_mt300a: [GL.iNet] glinet_gl-mt300a (ramips/mt7620)'
-          - 'glinet_gl_mt300n: [GL.iNet] glinet_gl-mt300n (ramips/mt7620)'
-          - 'glinet_gl_mt750: [GL.iNet] glinet_gl-mt750 (ramips/mt7620)'
-          - 'xiaomi_miwifi_mini: [小米] xiaomi_miwifi-mini (ramips/mt7620)'
-          - 'asus_rt_ac1200: [華碩 ASUS] asus_rt-ac1200 (ramips/mt76x8)'
-          - 'asus_rt_ac1200_v2: [華碩 ASUS] asus_rt-ac1200-v2 (ramips/mt76x8)'
-          - 'asus_rt_n12_vp_b1: [華碩 ASUS] asus_rt-n12-vp-b1 (ramips/mt76x8)'
-          - 'glinet_gl_mt300n_v2: [GL.iNet] glinet_gl-mt300n-v2 (ramips/mt76x8)'
-          - 'glinet_microuter_n300: [GL.iNet] glinet_microuter-n300 (ramips/mt76x8)'
-          - 'glinet_vixmini: [GL.iNet] glinet_vixmini (ramips/mt76x8)'
-          - 'xiaomi_mi_ra75: [小米] xiaomi_mi-ra75 (ramips/mt76x8)'
-          - 'xiaomi_mi_router_4a_100m: [小米] xiaomi_mi-router-4a-100m (ramips/mt76x8)'
-          - 'xiaomi_mi_router_4a_100m_intl: [小米] xiaomi_mi-router-4a-100m-intl (ramips/mt76x8)'
-          - 'xiaomi_mi_router_4a_100m_intl_v2: [小米] xiaomi_mi-router-4a-100m-intl-v2 (ramips/mt76x8)'
-          - 'xiaomi_mi_router_4c: [小米] xiaomi_mi-router-4c (ramips/mt76x8)'
-          - 'xiaomi_miwifi_3c: [小米] xiaomi_miwifi-3c (ramips/mt76x8)'
-          - 'xiaomi_miwifi_nano: [小米] xiaomi_miwifi-nano (ramips/mt76x8)'
-          - 'asus_rp_ac56: [華碩 ASUS] asus_rp-ac56 (ramips/mt7621)'
-          - 'asus_rp_ac87: [華碩 ASUS] asus_rp-ac87 (ramips/mt7621)'
-          - 'asus_rt_ac57u_v1: [華碩 ASUS] asus_rt-ac57u-v1 (ramips/mt7621)'
-          - 'asus_rt_ac65p: [華碩 ASUS] asus_rt-ac65p (ramips/mt7621)'
-          - 'asus_rt_ac85p: [華碩 ASUS] asus_rt-ac85p (ramips/mt7621)'
-          - 'asus_rt_ax53u: [華碩 ASUS] asus_rt-ax53u (ramips/mt7621)'
-          - 'asus_rt_ax54: [華碩 ASUS] asus_rt-ax54 (ramips/mt7621)'
-          - 'asus_rt_n56u_b1: [華碩 ASUS] asus_rt-n56u-b1 (ramips/mt7621)'
-          - 'glinet_gl_mt1300: [GL.iNet] glinet_gl-mt1300 (ramips/mt7621)'
-          - 'xiaomi_mi_router_3_pro: [小米] xiaomi_mi-router-3-pro (ramips/mt7621)'
-          - 'xiaomi_mi_router_3g: [小米] xiaomi_mi-router-3g (ramips/mt7621)'
-          - 'xiaomi_mi_router_3g_v2: [小米] xiaomi_mi-router-3g-v2 (ramips/mt7621)'
-          - 'xiaomi_mi_router_4: [小米] xiaomi_mi-router-4 (ramips/mt7621)'
-          - 'xiaomi_mi_router_4a_gigabit: [小米] 小米路由器 4A 千兆版 (MT7621)'
-          - 'xiaomi_mi_router_4a_gigabit_v2: [小米] xiaomi_mi-router-4a-gigabit-v2 (ramips/mt7621)'
-          - 'xiaomi_mi_router_ac2100: [小米] xiaomi_mi-router-ac2100 (ramips/mt7621)'
-          - 'xiaomi_mi_router_cr6606: [小米] xiaomi_mi-router-cr6606 (ramips/mt7621)'
-          - 'xiaomi_mi_router_cr6608: [小米] xiaomi_mi-router-cr6608 (ramips/mt7621)'
-          - 'xiaomi_mi_router_cr6609: [小米] xiaomi_mi-router-cr6609 (ramips/mt7621)'
-          - 'xiaomi_redmi_router_ac2100: [小米] xiaomi_redmi-router-ac2100 (ramips/mt7621)'
-          - 'asus_map_ac2200: [華碩 ASUS] asus_map-ac2200 (ipq40xx/generic)'
-          - 'asus_rt_ac42u: [華碩 ASUS] asus_rt-ac42u (ipq40xx/generic)'
-          - 'asus_rt_ac58u: [華碩 ASUS] asus_rt-ac58u (ipq40xx/generic)'
-          - 'glinet_gl_a1300: [GL.iNet] glinet_gl-a1300 (ipq40xx/generic)'
-          - 'glinet_gl_ap1300: [GL.iNet] glinet_gl-ap1300 (ipq40xx/generic)'
-          - 'glinet_gl_b1300: [GL.iNet] glinet_gl-b1300 (ipq40xx/generic)'
-          - 'glinet_gl_b2200: [GL.iNet] glinet_gl-b2200 (ipq40xx/generic)'
-          - 'friendlyarm_nanopi_neo_plus2: [友善 NanoPi] friendlyarm_nanopi-neo-plus2 (sunxi/cortexa53)'
-          - 'friendlyarm_nanopi_neo2: [友善 NanoPi] friendlyarm_nanopi-neo2 (sunxi/cortexa53)'
-          - 'friendlyarm_nanopi_r1s_h5: [友善 NanoPi] friendlyarm_nanopi-r1s-h5 (sunxi/cortexa53)'
-          - 'friendlyarm_nanopi_m1_plus: [友善 NanoPi] friendlyarm_nanopi-m1-plus (sunxi/cortexa7)'
-          - 'friendlyarm_nanopi_neo: [友善 NanoPi] friendlyarm_nanopi-neo (sunxi/cortexa7)'
-          - 'friendlyarm_nanopi_neo_air: [友善 NanoPi] friendlyarm_nanopi-neo-air (sunxi/cortexa7)'
-          - 'friendlyarm_nanopi_r1: [友善 NanoPi] friendlyarm_nanopi-r1 (sunxi/cortexa7)'
-          - 'friendlyarm_zeropi: [友善 NanoPi] friendlyarm_zeropi (sunxi/cortexa7)'
-          - 'glinet_gl_ar300m_nand: [GL.iNet] glinet_gl-ar300m-nand (ath79/nand)'
-          - 'glinet_gl_ar300m_nor: [GL.iNet] glinet_gl-ar300m-nor (ath79/nand)'
-          - 'glinet_gl_ar750s_nor: [GL.iNet] glinet_gl-ar750s-nor (ath79/nand)'
-          - 'glinet_gl_ar750s_nor_nand: [GL.iNet] glinet_gl-ar750s-nor-nand (ath79/nand)'
-          - 'glinet_gl_e750: [GL.iNet] glinet_gl-e750 (ath79/nand)'
-          - 'glinet_gl_s200_nor: [GL.iNet] glinet_gl-s200-nor (ath79/nand)'
-          - 'glinet_gl_s200_nor_nand: [GL.iNet] glinet_gl-s200-nor-nand (ath79/nand)'
-          - 'glinet_gl_x1200_nor: [GL.iNet] glinet_gl-x1200-nor (ath79/nand)'
-          - 'glinet_gl_x1200_nor_nand: [GL.iNet] glinet_gl-x1200-nor-nand (ath79/nand)'
-          - 'glinet_gl_xe300: [GL.iNet] glinet_gl-xe300 (ath79/nand)'
-          - 'asus_pl_ac56: [華碩 ASUS] asus_pl-ac56 (ath79/generic)'
-          - 'asus_rp_ac51: [華碩 ASUS] asus_rp-ac51 (ath79/generic)'
-          - 'asus_rp_ac66: [華碩 ASUS] asus_rp-ac66 (ath79/generic)'
-          - 'asus_rt_ac59u: [華碩 ASUS] asus_rt-ac59u (ath79/generic)'
-          - 'asus_rt_ac59u_v2: [華碩 ASUS] asus_rt-ac59u-v2 (ath79/generic)'
-          - 'asus_zenwifi_cd6n: [華碩 ASUS] asus_zenwifi-cd6n (ath79/generic)'
-          - 'asus_zenwifi_cd6r: [華碩 ASUS] asus_zenwifi-cd6r (ath79/generic)'
-          - 'glinet_6408: [GL.iNet] glinet_6408 (ath79/generic)'
-          - 'glinet_6416: [GL.iNet] glinet_6416 (ath79/generic)'
-          - 'glinet_gl_ar150: [GL.iNet] glinet_gl-ar150 (ath79/generic)'
-          - 'glinet_gl_ar300m_lite: [GL.iNet] glinet_gl-ar300m-lite (ath79/generic)'
-          - 'glinet_gl_ar300m16: [GL.iNet] glinet_gl-ar300m16 (ath79/generic)'
-          - 'glinet_gl_ar750: [GL.iNet] glinet_gl-ar750 (ath79/generic)'
-          - 'glinet_gl_mifi: [GL.iNET] glinet_gl-mifi (ath79/generic)'
-          - 'glinet_gl_usb150: [GL.iNET] glinet_gl-usb150 (ath79/generic)'
-          - 'glinet_gl_x300b: [GL.iNet] glinet_gl-x300b (ath79/generic)'
-          - 'glinet_gl_x750: [GL.iNet] glinet_gl-x750 (ath79/generic)'
-          - 'qihoo_c301: [360] qihoo_c301 (ath79/generic)'
-          - 'xiaomi_aiot_ac2350: [小米] xiaomi_aiot-ac2350 (ath79/generic)'
-          - 'xiaomi_mi_router_4q: [小米] xiaomi_mi-router-4q (ath79/generic)'
-          - 'asus_rt_ac53u: [華碩 ASUS] asus_rt-ac53u (bcm47xx/mips74k)'
-          - 'asus_rt_n14uhp: [華碩 ASUS] asus_rt-n14uhp (bcm47xx/mips74k)'
-          - 'asus_rt_n15u: [華碩 ASUS] asus_rt-n15u (bcm47xx/mips74k)'
-          - 'asus_rt_n16: [華碩 ASUS] asus_rt-n16 (bcm47xx/mips74k)'
-          - 'asus_rt_n66u: [華碩 ASUS] asus_rt-n66u (bcm47xx/mips74k)'
-          - 'asus_rt_n66w: [華碩 ASUS] asus_rt-n66w (bcm47xx/mips74k)'
-          - 'asus_gt_ac5300: [華碩 ASUS] asus_gt-ac5300 (bcm4908/generic)'
-          - 'asus_rt_n56u: [華碩 ASUS] asus_rt-n56u (ramips/rt3883)'
+          - 'xiaomi_4a_gigabit: [小米] 小米路由器 4A 千兆版 (Gigabit)'
+          - 'glinet_mt3000: [GL.iNet] GL-MT3000 (Beryl AX)'
+          - 'glinet_mt6000: [GL.iNet] GL-MT6000 (Flint 2)'
+          - 'glinet_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2)'
+          - 'glinet_axt1800: [GL.iNet] GL-AXT1800 (Slate AX)'
+          - 'glinet_ax1800: [GL.iNet] GL-AX1800 (Flint)'
+          - 'asus_tuf_ax4200: [華碩] ASUS TUF Gaming AX4200'
+          - 'tplink_xdr6088: [TP-Link] TL-XDR6088 雙 2.5G 路由器'
+          - 'qihoo_360t7: [360] 360 T7 路由器'
+          - 'jcg_q30pro: [捷稀] JCG Q30 Pro'
+          - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621)'
           # --- AUTO_DEVICES_END ---
 
       include_docker:
@@ -1019,12 +881,20 @@ jobs:
           chmod +x files/etc/uci-defaults/99-custom.sh
           ./build.sh
 
-      - name: 產生校驗碼與構建摘要
+      - name: 產生校驗碼、外掛清單與構建摘要
         id: summary
         run: |
           cd output
           sha256sum * > sha256sums.txt
           
+          # 將成功安裝的外掛清單排版為 Markdown 格式
+          if [ -f custom_packages.txt ]; then
+            PKGS_MD=$(sed 's/^/- `/' custom_packages.txt | sed 's/$/`/')
+          else
+            PKGS_MD="- 官方標準基礎組件"
+          fi
+          
+          # 寫入 GitHub Step Summary
           echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
           echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
@@ -1033,13 +903,22 @@ jobs:
           echo "- **管理網址**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
           echo "- **預設帳號**: \`root\`" >> $GITHUB_STEP_SUMMARY
           echo "- **預設密碼**: \`無密碼（直接留空登入）\`" >> $GITHUB_STEP_SUMMARY
-          echo "#### 檔案 SHA256 校驗表" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📦 本次自訂集成軟體包" >> $GITHUB_STEP_SUMMARY
+          echo "$PKGS_MD" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 🔒 檔案 SHA256 校驗表" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
           cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           
+          # 傳遞多行變數給 Release Step 使用
           echo "hashes<<EOF" >> $GITHUB_OUTPUT
           cat sha256sums.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "pkgs_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$PKGS_MD" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: 上傳韌體構建產物至 Artifacts (保留90天)
@@ -1069,6 +948,9 @@ jobs:
             - **管理網址**: `http://${{ inputs.lan_ip }}`（單網卡設備請查詢上級 DHCP IP）
             - **使用者名稱 (User)**: `root`
             - **登入密碼 (Password)**: `無密碼（密碼欄留空，直接按登入即可）`
+
+            ### 📦 本次自訂集成軟體包清單
+            ${{ steps.summary.outputs.pkgs_list }}
 
             #### 🔒 SHA256 檔案校驗碼
             ```text
