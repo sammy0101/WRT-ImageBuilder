@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 07:02:38 UTC 2026
+Generated on: Sun Sep 27 07:03:48 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -11,23 +11,19 @@ Generated on: Sun Sep 27 07:02:38 UTC 2026
 LOG_FILE="/tmp/uci-defaults-init.log"
 echo "=== 開始執行首航配置 $(date) ===" > "$LOG_FILE"
 
-# 1. 強制設定預設語言為繁體中文 (台灣)
-uci set luci.main.lang='zh_tw'
-uci commit luci
-
-# 2. 讀取自訂 LAN IP 設定
+# 1. 讀取自訂 LAN IP 設定
 if [ -f "/etc/custom_lan_ip" ]; then
     . /etc/custom_lan_ip
 fi
 TARGET_LAN_IP="${CUSTOM_LAN_IP:-192.168.100.1}"
 
-# 3. 強制配置靜態 LAN IP 為使用者自訂網址 (不再退回 DHCP)
+# 2. 強制配置靜態 LAN IP
 echo "配置 LAN IP 為固定網址: $TARGET_LAN_IP" >> "$LOG_FILE"
 uci set network.lan.proto='static'
 uci set network.lan.ipaddr="$TARGET_LAN_IP"
 uci set network.lan.netmask='255.255.255.0'
 
-# 4. PPPoE 撥號配置
+# 3. PPPoE 撥號配置
 PPPOE_CONF="/etc/config/pppoe-settings"
 if [ -f "$PPPOE_CONF" ]; then
     . "$PPPOE_CONF"
@@ -39,17 +35,30 @@ if [ -f "$PPPOE_CONF" ]; then
     fi
 fi
 
-# 5. 防火牆允許訪問
+# 4. 防火牆允許入站訪問
 uci set firewall.@zone[1].input='ACCEPT'
 
 uci commit network
 uci commit firewall
 
-# 6. 若存在 daed 核心，確保開機自動啟用自啟
-if [ -f "/etc/init.d/daed" ]; then
-    echo "啟用 daed 開機自啟動服務..." >> "$LOG_FILE"
+# 5. 【註冊與啟用 DAED】
+if [ -f "/usr/bin/daed" ] || [ -f "/etc/init.d/daed" ]; then
+    echo "正在初始化 DAED 配置與自啟動服務..." >> "$LOG_FILE"
+    
+    # 建立預設配置檔目錄
+    mkdir -p /etc/daed /var/log/daed
+    
+    # 確保執行權限
+    chmod +x /usr/bin/daed 2>/dev/null || true
+    chmod +x /etc/init.d/daed 2>/dev/null || true
+    
+    # 開啟服務自啟動
     /etc/init.d/daed enable 2>/dev/null || true
-    /etc/init.d/daed restart 2>/dev/null || true
+    /etc/init.d/daed start 2>/dev/null || true
+    
+    # 刷新 LuCI 索引快取，確保 Web 選單立即出現
+    rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/ 2>/dev/null || true
+    /etc/init.d/rpcd restart 2>/dev/null || true
 fi
 
 echo "=== 首航配置完成 ===" >> "$LOG_FILE"
