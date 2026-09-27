@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 旁路由引導模式 + OpenWrt 原版預裝 DAED + 官方原裝英文 + VMware .vmdk
+# 支援 旁路由引導模式 + OpenWrt 原版真·預裝 DAED (自帶 LuCI 選單與二進制)
 # ==============================================================================
 set -euo pipefail
 
@@ -121,7 +121,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【秒級解壓】DAED 與 Argon 完整注入
+# 6. 【真·預裝核心】DAED 二進制與 LuCI 選單完整提取注入
 DAED_PREINSTALLED=false
 mkdir -p packages
 
@@ -131,7 +131,7 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   echo "  正在處理 OpenWrt 第三方外掛 (DAED & Argon)..."
   echo "=========================================================="
 
-  # (A) 下載相容的 luci-theme-argon
+  # (A) 下載相容的 luci-theme-argon 放入 packages/
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
     echo "下載 luci-theme-argon 安裝包..."
     if [ "$is_apk" = true ]; then
@@ -142,9 +142,9 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     wget -q -c --timeout=20 --tries=3 "$ARGON_URL" -P packages/ || true
   fi
 
-  # (B) daed 與 luci-app-daed：以毫秒級原生管道解壓注入 files/
+  # (B) daed 與 luci-app-daed：下載並使用官方 host apk 解壓進 files/
   if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
-    echo "下載 daed 二進制核心與管理介面..."
+    echo "下載 DAED 核心與 LuCI 介面包..."
     mkdir -p /tmp/daed_dl files/usr/bin files/etc/init.d files/etc/daed
 
     if [ "$is_apk" = true ]; then
@@ -155,34 +155,40 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
       DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
     fi
 
-    wget -q -c --timeout=20 --tries=3 "$DAED_BIN_URL" -O /tmp/daed_dl/daed.pkg || true
-    wget -q -c --timeout=20 --tries=3 "$DAED_LUCI_URL" -O /tmp/daed_dl/luci.pkg || true
+    # 使用 curl -fL 確保 404 時不會寫入錯誤網頁
+    curl -fL -sS --connect-timeout 20 --retry 3 "$DAED_BIN_URL" -o /tmp/daed_dl/daed_core.pkg || echo "⚠️ 下載 DAED 核心失敗"
+    curl -fL -sS --connect-timeout 20 --retry 3 "$DAED_LUCI_URL" -o /tmp/daed_dl/daed_luci.pkg || echo "⚠️ 下載 DAED LuCI 失敗"
 
-    echo "正在以原生串流解壓套件 (0.2 秒完成)..."
+    echo "正在提取安裝包並直接注入固件檔案系統..."
     for p_file in /tmp/daed_dl/*.pkg; do
-      [ -f "$p_file" ] || continue
-      # 針對 apk 多段 gzip 流: gzip -dc 串流解壓 + tar -i 忽略中間零塊提取所有檔案
-      gzip -dc "$p_file" 2>/dev/null | tar -i -xf - -C files/ 2>/dev/null || true
-      # 針對 ipk data.tar.gz
+      [ -s "$p_file" ] || continue
+      echo "正在提取組件: $(basename "$p_file")..."
+      
+      # 方案 1: 使用 ImageBuilder 自帶的 host apk 工具官方提取 (針對 25.12)
+      if [ "$is_apk" = true ] && [ -x "staging_dir/host/bin/apk" ]; then
+        ./staging_dir/host/bin/apk extract --allow-untrusted --destination "$PWD/files/" "$p_file" 2>/dev/null || true
+      fi
+      
+      # 方案 2: 使用 7z 萬能解包輔助
+      if command -v 7z >/dev/null 2>&1; then
+        mkdir -p /tmp/pkg_7z
+        7z x -y "$p_file" -o/tmp/pkg_7z/ >/dev/null 2>&1 || true
+        if [ -f "/tmp/pkg_7z/data.tar.gz" ]; then
+          tar -xzf /tmp/pkg_7z/data.tar.gz -C "$PWD/files/" 2>/dev/null || true
+        fi
+        cp -rf /tmp/pkg_7z/* "$PWD/files/" 2>/dev/null || true
+        rm -rf /tmp/pkg_7z
+      fi
+      
+      # 方案 3: 針對 24.10 ipk 的標準解壓
       if tar -tf "$p_file" 2>/dev/null | grep -q "data.tar.gz"; then
-        tar -xzf "$p_file" data.tar.gz -O 2>/dev/null | tar -xzf - -C files/ 2>/dev/null || true
+        tar -xzf "$p_file" data.tar.gz -O 2>/dev/null | tar -xzf - -C "$PWD/files/" 2>/dev/null || true
       fi
     done
 
-    rm -rf files/.PKGINFO files/.SIGN.* /tmp/daed_dl 2>/dev/null || true
+    rm -rf files/.PKGINFO files/.SIGN.* files/control.tar.gz files/data.tar.gz files/debian-binary /tmp/daed_dl 2>/dev/null || true
 
-    # 備用獨立二進制兜底 (若上述未取得 binary)
-    if [ ! -f "files/usr/bin/daed" ]; then
-      echo "正在下載官方獨立版 daed 二進制檔案兜底..."
-      wget -q -c --timeout=25 --tries=3 "https://github.com/daeuniverse/daed/releases/download/v0.8.0/daed-linux-x86_64.tar.gz" -O /tmp/daed.tar.gz || true
-      if [ -f "/tmp/daed.tar.gz" ]; then
-        tar -xzf /tmp/daed.tar.gz -C files/usr/bin/ 2>/dev/null || true
-        [ -f "files/usr/bin/daed-linux-x86_64" ] && mv files/usr/bin/daed-linux-x86_64 files/usr/bin/daed
-        rm -f /tmp/daed.tar.gz
-      fi
-    fi
-
-    # 確保標準 init.d 啟動腳本
+    # 確保標準 init.d 服務腳本存在
     if [ ! -f "files/etc/init.d/daed" ]; then
       cat <<'INITSCRIPT' > files/etc/init.d/daed
 #!/bin/sh /etc/rc.common
@@ -211,12 +217,16 @@ stop_service() {
 INITSCRIPT
     fi
 
-    chmod +x files/usr/bin/daed 2>/dev/null || true
-    chmod +x files/etc/init.d/daed 2>/dev/null || true
+    chmod +x files/usr/bin/daed files/etc/init.d/daed 2>/dev/null || true
 
+    # 驗證二進制與 LuCI 選單實體
     if [ -f "files/usr/bin/daed" ]; then
-      echo "✓ DAED 二進制注入成功: /usr/bin/daed (大小: $(ls -lh files/usr/bin/daed | awk '{print $5}'))"
+      echo "✓ DAED 二進制核心注入成功: /usr/bin/daed ($(ls -lh files/usr/bin/daed | awk '{print $5}'))"
       DAED_PREINSTALLED=true
+    fi
+
+    if [ -f "files/usr/share/luci/menu.d/luci-app-daed.json" ] || [ -f "files/usr/lib/lua/luci/controller/daed.lua" ]; then
+      echo "✓ DAED LuCI 網頁選單注入成功！"
     fi
 
     PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD kmod-tun ca-bundle"
