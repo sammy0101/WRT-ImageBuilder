@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 08:05:15 UTC 2026
+Generated on: Sun Sep 27 08:15:52 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -1030,8 +1030,8 @@ jobs:
             - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
             - **網路模式**: ${{ inputs.is_bypass_router && '🛡️ 旁路由模式 (DHCP已關閉，NAT偽裝已開啟)' || '🌐 主路由模式' }}
             - **管理網址 (LAN IP)**: `http://${{ inputs.lan_ip }}`
-            ${{ inputs.is_bypass_router && format('- **主路由網關 (Gateway)**: `{0}`', inputs.gateway_ip) || '' }}
-            ${{ inputs.is_bypass_router && format('- **自訂 DNS**: `{0}`', inputs.dns_servers) || '' }}
+            - **主路由網關 (Gateway)**: `${{ inputs.gateway_ip }}`
+            - **自訂 DNS**: `${{ inputs.dns_servers }}`
 
             ### 🔑 預設登入認證資訊
             - **Web 管理網址**: `http://${{ inputs.lan_ip }}`
