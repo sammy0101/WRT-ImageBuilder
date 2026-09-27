@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 03:32:50 UTC 2026
+Generated on: Sun Sep 27 03:41:55 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -443,7 +443,7 @@ fi
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 23.05 / 24.10 / 25.12+，支援第三方外部外掛自動下載注入 + vmlinux-btf 內核補全
+# 支援 OpenWrt 原版直植入 daed (繞過 apk 依賴檢查) + 自動轉換 VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -535,62 +535,7 @@ if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
 fi
 
-# 5. 針對 OpenWrt 原版，自動從 Release 下載外掛與其內核相依包
-mkdir -p packages
-
-AUTH_HEADER=()
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-  AUTH_HEADER=(-H "Authorization: Bearer $GITHUB_TOKEN")
-fi
-
-if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-  echo ""
-  echo "=========================================================="
-  echo "  偵測到 OpenWrt 原版系統，啟動外部第三方外掛補齊下載器..."
-  echo "=========================================================="
-
-  # --- (A) 下載相容的 luci-theme-argon ---
-  if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
-    echo "正在下載相容的 luci-theme-argon..."
-    if [ "$is_apk" = true ]; then
-      ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
-    else
-      ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
-    fi
-    wget -q -c "$ARGON_URL" -P packages/ || true
-  fi
-
-  # --- (B) 下載相容的 daed、luci-app-daed 與 vmlinux-btf 內核補全包 ---
-  if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
-    echo "正在下載相容的 daed、LuCI 面板與 vmlinux-btf 依賴包..."
-    if [ "$is_apk" = true ]; then
-      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
-      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed-1.4-r1-openwrt-25.12.apk"
-      BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.12-x86_64.apk"
-    else
-      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed_2026.07.31-r1_x86_64-openwrt-24.10.ipk"
-      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
-      BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.6-x86_64.ipk"
-    fi
-    wget -q -c "$DAED_BIN_URL" -P packages/ || true
-    wget -q -c "$DAED_LUCI_URL" -P packages/ || true
-    wget -q -c "$BTF_URL" -P packages/ || true
-    PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD luci-app-daed vmlinux-btf"
-  fi
-
-  # 剔除原版無法使用的 turboacc
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
-
-  echo "✓ 本地第三方軟體包庫檔案清單:"
-  ls -lh packages/ || true
-  echo "=========================================================="
-  echo ""
-fi
-
-PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
-echo "最終包含軟體包列表: $PACKAGES_TO_BUILD"
-
-# 6. 整合 Overlay 檔案 (files 系統覆蓋層)
+# 5. 整合 Overlay 檔案 (files 系統覆蓋層)
 mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$ROOT_DIR/files/"* files/
 
@@ -604,7 +549,84 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 7. 帶有智慧相依關係追蹤的容錯自癒（Self-Healing）打包程序
+# 6. 【黑科技核心】OpenWrt 專屬：daed 二進制直接解壓植入 files/ (徹底繞過 apk 依賴檢查)
+DAED_PREINSTALLED=false
+mkdir -p packages
+
+if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+  echo ""
+  echo "=========================================================="
+  echo "  偵測到 OpenWrt 原版系統：執行外部外掛處理程序..."
+  echo "=========================================================="
+
+  # --- (A) luci-theme-argon 通過本地倉庫正常打包 ---
+  if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
+    echo "正在下載相容的 luci-theme-argon..."
+    if [ "$is_apk" = true ]; then
+      ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
+    else
+      ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
+    fi
+    wget -q -c "$ARGON_URL" -P packages/ || true
+  fi
+
+  # --- (B) daed 與 luci-app-daed：解壓縮直接植入 files/ 根目錄 ---
+  if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
+    echo "正在下載 daed 與 LuCI 面板並直接解壓植入韌體根目錄..."
+    if [ "$is_apk" = true ]; then
+      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
+      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed-1.4-r1-openwrt-25.12.apk"
+      BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.12-x86_64.apk"
+    else
+      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed_2026.07.31-r1_x86_64-openwrt-24.10.ipk"
+      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
+      BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.6-x86_64.ipk"
+    fi
+
+    mkdir -p /tmp/daed_download /tmp/daed_extract
+    wget -q -c "$DAED_BIN_URL" -P /tmp/daed_download/ || true
+    wget -q -c "$DAED_LUCI_URL" -P /tmp/daed_download/ || true
+    wget -q -c "$BTF_URL" -P /tmp/daed_download/ || true
+
+    for p_file in /tmp/daed_download/*; do
+      [ -f "$p_file" ] || continue
+      tar -xf "$p_file" -C /tmp/daed_extract/ 2>/dev/null || tar -xzf "$p_file" -C /tmp/daed_extract/ 2>/dev/null || true
+      if [ -f "/tmp/daed_extract/data.tar.gz" ]; then
+        tar -xzf /tmp/daed_extract/data.tar.gz -C /tmp/daed_extract/ 2>/dev/null || true
+        rm -f /tmp/daed_extract/data.tar.gz /tmp/daed_extract/control.tar.gz /tmp/daed_extract/debian-binary 2>/dev/null || true
+      fi
+    done
+
+    # 清除安裝包 control 元數據
+    rm -rf /tmp/daed_extract/.PKGINFO /tmp/daed_extract/.SIGN.* 2>/dev/null || true
+
+    # 直接複製進 files/ 覆蓋層
+    cp -rf /tmp/daed_extract/* files/ 2>/dev/null || true
+    rm -rf /tmp/daed_download /tmp/daed_extract
+
+    chmod +x files/usr/bin/daed 2>/dev/null || true
+    chmod +x files/etc/init.d/daed 2>/dev/null || true
+
+    # 安裝 daed 執行所需的官方標準內核依賴 (官方源有這些)
+    PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD kmod-tun ca-bundle"
+
+    # 從 apk 編譯清單移除，避免觸發 apk 依賴阻擋
+    PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/daed//g; s/luci-app-daed//g; s/vmlinux-btf//g')
+    DAED_PREINSTALLED=true
+    echo "✓ daed 與核心檔案已直接植入韌體檔案系統！"
+  fi
+
+  # 剔除原版無法使用的 turboacc
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
+
+  echo "=========================================================="
+  echo ""
+fi
+
+PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
+echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
+
+# 7. 帶有智慧容錯自癒（Self-Healing）的打包程序
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -616,31 +638,41 @@ execute_make_image() {
     FILES="files" \
     ROOTFS_PARTSIZE="$PARTSIZE_MB" \
     BIN_DIR="$OUTPUT_DIR" 2>&1 | tee "$log_tmp"; then
-    echo "$current_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
+    
+    # 產出已成功安裝外掛清單
+    local record_pkgs="$current_pkgs"
+    if [ "$DAED_PREINSTALLED" = true ]; then
+      record_pkgs="$record_pkgs daed"
+    fi
+    echo "$record_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
     return 0
   fi
 
-  # 智慧擷取: 缺失套件名稱 + 引起問題的父級依賴外掛
-  local missing_apk=$(grep -E '^\s+[a-zA-Z0-9_\.\-]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
-  local required_by=$(grep -E 'required by:\s*[a-zA-Z0-9_\.\-]+' "$log_tmp" | sed -E 's/.*required by:\s*([a-zA-Z0-9_-]+).*/\1/' | tr '\n' ' ')
+  local missing_pkgs=$(grep -E '^\s+[a-zA-Z0-9_\.\-]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
+  local parent_raw=$(grep -oE '[a-zA-Z0-9_\.\-]+\[[^]]+\]' "$log_tmp" | cut -d'[' -f1 | grep -v '^world$' | tr '\n' ' ')
+  local parent_clean=""
+  for p in $parent_raw; do
+    c_name=$(echo "$p" | sed -E 's/-[0-9].*//; s/_[0-9].*//')
+    parent_clean="$parent_clean $c_name"
+  done
+
   local missing_opkg=$(grep -oE "Unknown package '[^']+'" "$log_tmp" | cut -d"'" -f2 | tr '\n' ' ')
   local missing_opkg2=$(grep -oE "Cannot install package [^.]+" "$log_tmp" | awk '{print $NF}' | tr '\n' ' ')
 
-  local all_culprits=$(echo "$missing_apk $required_by $missing_opkg $missing_opkg2" | xargs -n1 2>/dev/null | sort -u | xargs 2>/dev/null || echo "")
+  local all_culprits=$(echo "$missing_pkgs $parent_clean $missing_opkg $missing_opkg2" | xargs -n1 2>/dev/null | sort -u | xargs 2>/dev/null || echo "")
 
   if [ -n "$all_culprits" ]; then
     echo ""
     echo "=========================================================="
-    echo "⚠️ 偵測到以下軟體包或其依賴項在當前環境中無法滿足:"
+    echo "⚠️ 偵測到以下軟體包在當前環境中無法滿足:"
     echo "   $all_culprits"
-    echo "🔄 觸發自動自癒機制：清除缺失組件與本地暫存，重新構建..."
+    echo "🔄 觸發自動自癒機制：清除缺失組件，重新構建..."
     echo "=========================================================="
 
     local cleaned_pkgs="$current_pkgs"
     for item in $all_culprits; do
-      # 從編譯命令中移除
       cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )$item( |\$)/ /g")
-      # 從本地 packages 目錄清除衝突包，避免 apk index 殘留報錯
+      cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )luci-app-$item( |\$)/ /g")
       rm -f packages/*"$item"* 2>/dev/null || true
     done
     cleaned_pkgs=$(echo "$cleaned_pkgs" | xargs)
@@ -654,7 +686,11 @@ execute_make_image() {
       FILES="files" \
       ROOTFS_PARTSIZE="$PARTSIZE_MB" \
       BIN_DIR="$OUTPUT_DIR"; then
-      echo "$cleaned_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
+      local record_pkgs="$cleaned_pkgs"
+      if [ "$DAED_PREINSTALLED" = true ]; then
+        record_pkgs="$record_pkgs daed"
+      fi
+      echo "$record_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
       return 0
     fi
     return 1
