@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 OpenWrt 原版直植入 daed (繞過 apk 依賴檢查) + 自動轉換 VMware .vmdk
+# 支援 OpenWrt 原版真·二進制直植入 daed + 強制自訂 IP + 自動轉換 VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -40,6 +40,7 @@ echo "  系統版本: $FW_VER"
 echo "  所選設備鍵名: $DEVICE_KEY"
 echo "  目標架構 (Target): $TARGET_INPUT"
 echo "  設備代號 (Profile): $PROFILE_NAME"
+echo "  自訂 LAN IP: $TARGET_IP"
 echo "  設定容量: $SIZE_IN_GB GB"
 echo "=========================================================="
 
@@ -107,17 +108,17 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【黑科技核心】OpenWrt 專屬：daed 二進制直接解壓植入 files/ (徹底繞過 apk 依賴檢查)
+# 6. 【真·二進制多流解壓】OpenWrt 專屬：daed 完整實體注入 files/
 DAED_PREINSTALLED=false
 mkdir -p packages
 
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   echo ""
   echo "=========================================================="
-  echo "  偵測到 OpenWrt 原版系統：執行外部外掛處理程序..."
+  echo "  偵測到 OpenWrt 原版系統：執行外部外掛直植入程序..."
   echo "=========================================================="
 
-  # --- (A) luci-theme-argon 通過本地倉庫正常打包 ---
+  # (A) luci-theme-argon 本地倉庫下載
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
     echo "正在下載相容的 luci-theme-argon..."
     if [ "$is_apk" = true ]; then
@@ -128,55 +129,95 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     wget -q -c "$ARGON_URL" -P packages/ || true
   fi
 
-  # --- (B) daed 與 luci-app-daed：解壓縮直接植入 files/ 根目錄 ---
+  # (B) daed 與 luci-app-daed：多流解壓縮直接釋放進 files/
   if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
-    echo "正在下載 daed 與 LuCI 面板並直接解壓植入韌體根目錄..."
+    echo "正在下載 daed 與 LuCI 面板..."
     if [ "$is_apk" = true ]; then
       DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
       DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed-1.4-r1-openwrt-25.12.apk"
-      BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.12-x86_64.apk"
     else
       DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed_2026.07.31-r1_x86_64-openwrt-24.10.ipk"
       DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
-      BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.6-x86_64.ipk"
     fi
 
     mkdir -p /tmp/daed_download /tmp/daed_extract
-    wget -q -c "$DAED_BIN_URL" -P /tmp/daed_download/ || true
-    wget -q -c "$DAED_LUCI_URL" -P /tmp/daed_download/ || true
-    wget -q -c "$BTF_URL" -P /tmp/daed_download/ || true
+    wget -q -c "$DAED_BIN_URL" -O /tmp/daed_download/daed.pkg || true
+    wget -q -c "$DAED_LUCI_URL" -O /tmp/daed_download/luci-daed.pkg || true
 
-    for p_file in /tmp/daed_download/*; do
-      [ -f "$p_file" ] || continue
-      tar -xf "$p_file" -C /tmp/daed_extract/ 2>/dev/null || tar -xzf "$p_file" -C /tmp/daed_extract/ 2>/dev/null || true
-      if [ -f "/tmp/daed_extract/data.tar.gz" ]; then
-        tar -xzf /tmp/daed_extract/data.tar.gz -C /tmp/daed_extract/ 2>/dev/null || true
-        rm -f /tmp/daed_extract/data.tar.gz /tmp/daed_extract/control.tar.gz /tmp/daed_extract/debian-binary 2>/dev/null || true
-      fi
-    done
+    # 使用 python/tarfile 完整提取 apk/ipk 內所有串聯 gzip 區塊 (包含真實資料流)
+    python3 - <<'EOF'
+import os, gzip, tarfile
 
-    # 清除安裝包 control 元數據
+dl_dir = "/tmp/daed_download"
+out_dir = "/tmp/daed_extract"
+
+for fname in os.listdir(dl_dir):
+    fpath = os.path.join(dl_dir, fname)
+    if not os.path.isfile(fpath):
+        continue
+    try:
+        # 解開多段串聯的 gzip tar 流
+        with open(fpath, "rb") as f:
+            data = f.read()
+        
+        offset = 0
+        while offset < len(data):
+            try:
+                # 尋找 gzip 魔數 (0x1f, 0x8b)
+                idx = data.find(b"\x1f\x8b", offset)
+                if idx == -1:
+                    break
+                decompressed = gzip.decompress(data[idx:])
+                # 將解開的 tar 提取到目標目錄
+                import io
+                with tarfile.open(fileobj=io.BytesIO(decompressed)) as tar:
+                    tar.extractall(path=out_dir)
+                offset = idx + 10 # 推進游標繼續掃描後續區塊
+            except Exception:
+                offset += 2
+    except Exception as e:
+        print(f"提取 {fname} 錯誤: {e}")
+EOF
+
+    # 檢查是否包含嵌套的 data.tar.gz (常見於 ipk)
+    if [ -f "/tmp/daed_extract/data.tar.gz" ]; then
+      tar -xzf /tmp/daed_extract/data.tar.gz -C /tmp/daed_extract/ 2>/dev/null || true
+      rm -f /tmp/daed_extract/data.tar.gz /tmp/daed_extract/control.tar.gz 2>/dev/null || true
+    fi
+
+    # 清除套件元數據
     rm -rf /tmp/daed_extract/.PKGINFO /tmp/daed_extract/.SIGN.* 2>/dev/null || true
 
-    # 直接複製進 files/ 覆蓋層
+    # 將提取到的真實二進制檔複製覆蓋進 files/ 韌體檔案系統
     cp -rf /tmp/daed_extract/* files/ 2>/dev/null || true
     rm -rf /tmp/daed_download /tmp/daed_extract
 
     chmod +x files/usr/bin/daed 2>/dev/null || true
     chmod +x files/etc/init.d/daed 2>/dev/null || true
 
-    # 安裝 daed 執行所需的官方標準內核依賴 (官方源有這些)
-    PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD kmod-tun ca-bundle"
+    # 驗證二進制檔是否真的植入成功
+    if [ -f "files/usr/bin/daed" ]; then
+      echo "✓ 驗證成功: /usr/bin/daed 實體檔案已成功寫入固件！大小: $(ls -lh files/usr/bin/daed | awk '{print $5}')"
+      DAED_PREINSTALLED=true
+    else
+      echo "⚠️ 警告: 未能在 files/usr/bin/daed 找到實體檔案，嘗試備用下載..."
+      mkdir -p files/usr/bin files/etc/init.d
+      wget -q -c "https://github.com/daeuniverse/daed/releases/download/v0.8.0/daed-linux-x86_64.tar.gz" -O /tmp/daed_standalone.tar.gz || true
+      if [ -f "/tmp/daed_standalone.tar.gz" ]; then
+        tar -xzf /tmp/daed_standalone.tar.gz -C files/usr/bin/ 2>/dev/null || true
+        mv files/usr/bin/daed-linux-x86_64 files/usr/bin/daed 2>/dev/null || true
+        chmod +x files/usr/bin/daed 2>/dev/null || true
+        DAED_PREINSTALLED=true
+      fi
+    fi
 
-    # 從 apk 編譯清單移除，避免觸發 apk 依賴阻擋
+    # 補充官方源具備的運行時依賴
+    PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD kmod-tun ca-bundle"
+    # 從編譯命令中排除 daed，避免 apk 檢查 vmlinux-btf
     PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/daed//g; s/luci-app-daed//g; s/vmlinux-btf//g')
-    DAED_PREINSTALLED=true
-    echo "✓ daed 與核心檔案已直接植入韌體檔案系統！"
   fi
 
-  # 剔除原版無法使用的 turboacc
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
-
   echo "=========================================================="
   echo ""
 fi
@@ -197,7 +238,6 @@ execute_make_image() {
     ROOTFS_PARTSIZE="$PARTSIZE_MB" \
     BIN_DIR="$OUTPUT_DIR" 2>&1 | tee "$log_tmp"; then
     
-    # 產出已成功安裝外掛清單
     local record_pkgs="$current_pkgs"
     if [ "$DAED_PREINSTALLED" = true ]; then
       record_pkgs="$record_pkgs daed"
