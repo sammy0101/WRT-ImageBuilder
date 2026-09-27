@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 23.05(opkg) / 24.10(opkg) / 25.12+(apk)，支援自動轉換 VMware .vmdk
+# 支援 23.05 / 24.10 / 25.12+，支援 OpenWrt 自動注入擴充源解鎖代理外掛
 # ==============================================================================
 set -euo pipefail
 
@@ -13,7 +13,7 @@ DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
 TARGET_IP="${LAN_IP:-192.168.100.1}"
 PPPOE_EN="${ENABLE_PPPOE:-false}"
 
-# 1. 取得設備唯一標識鍵
+# 1. 解析設備鍵名
 DEVICE_KEY=$(echo "$SELECTED_DEVICE" | cut -d':' -f1 | tr -d ' ')
 DEVICES_FILE="$PWD/data/devices.json"
 
@@ -41,7 +41,7 @@ echo "  設備代號 (Profile): $PROFILE_NAME"
 echo "  設定容量: $SIZE_IN_GB GB"
 echo "=========================================================="
 
-# 2. 驗證分區大小並將 GB 換算為 MB
+# 2. 驗證容量並換算為 MB
 if ! [[ "$SIZE_IN_GB" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
   echo "錯誤: 輸入的空間大小必須為數字！當前值: '$SIZE_IN_GB'" >&2
   exit 1
@@ -49,10 +49,9 @@ fi
 PARTSIZE_MB=$(awk -v gb="$SIZE_IN_GB" 'BEGIN { printf "%.0f", gb * 1024 }')
 echo "✓ 軟體包分區已轉換: ${SIZE_IN_GB} GB -> ${PARTSIZE_MB} MB"
 
-# 3. 解析 Target 與 Subtarget
 IFS='/' read -r TARGET_DIR SUBTARGET_DIR <<< "$TARGET_INPUT"
 
-# 4. 下載官方 ImageBuilder
+# 3. 下載官方 ImageBuilder
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   BASE_URL="https://downloads.openwrt.org/releases/${FW_VER}/targets/${TARGET_DIR}/${SUBTARGET_DIR}"
   ARCHIVE_NAME="openwrt-imagebuilder-${FW_VER}-${TARGET_DIR}-${SUBTARGET_DIR}.Linux-x86_64.tar.zst"
@@ -77,7 +76,21 @@ tar -xf "$WORKDIR/$ARCHIVE_NAME" -C "$WORKDIR"
 EXTRACTED_DIR=$(find "$WORKDIR" -maxdepth 1 -type d -name "*imagebuilder*" | head -n 1)
 cd "$EXTRACTED_DIR"
 
-# 5. 整合 Overlay 檔案 (files 系統覆蓋層)
+# 4. 【核心改進】若為 OpenWrt，自動注入相容擴充源以解鎖代理外掛
+if [[ "${FW_TYPE,,}" == "openwrt" ]] && [ -f "repositories.conf" ]; then
+  echo "ℹ️ 檢測為 OpenWrt 官方原版：正在關閉強制簽名驗證並注入擴充源..."
+  sed -i 's/^option check_signature/# option check_signature/g' repositories.conf
+  
+  # 自動抓取對應架構 (例: x86_64, aarch64_cortex-a53 等)
+  PKG_ARCH=$(grep -m1 '/packages/' repositories.conf | sed -n 's|.*/packages/\([^/]*\)/.*|\1|p' || echo "")
+  if [ -n "$PKG_ARCH" ]; then
+    echo "src/gz custom_luci https://downloads.immortalwrt.org/releases/${FW_VER}/packages/${PKG_ARCH}/luci" >> repositories.conf
+    echo "src/gz custom_packages https://downloads.immortalwrt.org/releases/${FW_VER}/packages/${PKG_ARCH}/packages" >> repositories.conf
+    echo "✓ 已成功為 OpenWrt 注入相容擴充倉庫 (架構: $PKG_ARCH)"
+  fi
+fi
+
+# 5. 整合 Overlay 檔案
 mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$PWD/../../files/"* files/
 
@@ -91,7 +104,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 整合軟體包清單與版本過濾
+# 6. 整合軟體包清單
 source "$PWD/../../shell/custom-packages.sh"
 PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
 
@@ -100,15 +113,20 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman luci-i18n-dockerman-zh-tw"
 fi
 
+# 若為 25.12+ (apk 架構)，清理舊式 opkg 依賴
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
-  echo "ℹ️ 檢測到當前為 25.12+ apk 世代，自動清洗 opkg 舊式依賴包..."
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
+fi
+
+# 若為原版 OpenWrt，自動剔除因缺少內核補丁而無法安裝的 TurboACC
+if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
 fi
 
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終包含軟體包列表: $PACKAGES_TO_BUILD"
 
-# 7. 帶有自動容錯自癒（Self-Healing）的打包程序
+# 7. 帶有容錯自癒（Self-Healing）的打包程序
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -160,7 +178,7 @@ execute_make_image() {
 
 execute_make_image "$PACKAGES_TO_BUILD"
 
-# 8. 自動轉換 VMware .vmdk 虛擬磁碟格式 (僅限包含 combined 映像的 x86 系列)
+# 8. 自動轉換 VMware .vmdk 虛擬磁碟格式
 if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
   echo ""
   echo "=========================================================="
