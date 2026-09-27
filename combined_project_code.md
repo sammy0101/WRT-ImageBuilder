@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 04:11:48 UTC 2026
+Generated on: Sun Sep 27 04:30:28 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -21,31 +21,11 @@ if [ -f "/etc/custom_lan_ip" ]; then
 fi
 TARGET_LAN_IP="${CUSTOM_LAN_IP:-192.168.100.1}"
 
-# 3. 網卡自動偵測邏輯
-ETH_COUNT=0
-ETH_LIST=""
-
-for eth in /sys/class/net/*; do
-    ETH_NAME=$(basename "$eth")
-    if [ "$ETH_NAME" != "lo" ] && [ -d "$eth/device" ]; then
-        ETH_COUNT=$((ETH_COUNT + 1))
-        ETH_LIST="$ETH_LIST $ETH_NAME"
-    fi
-done
-
-echo "偵測到的物理網卡數量: $ETH_COUNT (網卡列表: $ETH_LIST)" >> "$LOG_FILE"
-
-if [ "$ETH_COUNT" -le 1 ]; then
-    echo "配置單網口模式: 自動透過上級 DHCP 獲取 IP" >> "$LOG_FILE"
-    uci set network.lan.proto='dhcp'
-    uci delete network.lan.ipaddr 2>/dev/null
-    uci delete network.lan.netmask 2>/dev/null
-else
-    echo "配置多網口模式: 設定 LAN IP 為 $TARGET_LAN_IP" >> "$LOG_FILE"
-    uci set network.lan.proto='static'
-    uci set network.lan.ipaddr="$TARGET_LAN_IP"
-    uci set network.lan.netmask='255.255.255.0'
-fi
+# 3. 強制配置靜態 LAN IP 為使用者自訂網址 (不再退回 DHCP)
+echo "配置 LAN IP 為固定網址: $TARGET_LAN_IP" >> "$LOG_FILE"
+uci set network.lan.proto='static'
+uci set network.lan.ipaddr="$TARGET_LAN_IP"
+uci set network.lan.netmask='255.255.255.0'
 
 # 4. PPPoE 撥號配置
 PPPOE_CONF="/etc/config/pppoe-settings"
@@ -59,16 +39,17 @@ if [ -f "$PPPOE_CONF" ]; then
     fi
 fi
 
-# 5. 防火牆安全調試設定
+# 5. 防火牆允許訪問
 uci set firewall.@zone[1].input='ACCEPT'
 
 uci commit network
 uci commit firewall
 
-# 6. 【自動啟用 daed 服務】若存在 daed 核心，確保開機自動啟用自啟
-if [ -x "/etc/init.d/daed" ]; then
+# 6. 若存在 daed 核心，確保開機自動啟用自啟
+if [ -f "/etc/init.d/daed" ]; then
     echo "啟用 daed 開機自啟動服務..." >> "$LOG_FILE"
     /etc/init.d/daed enable 2>/dev/null || true
+    /etc/init.d/daed restart 2>/dev/null || true
 fi
 
 echo "=== 首航配置完成 ===" >> "$LOG_FILE"
