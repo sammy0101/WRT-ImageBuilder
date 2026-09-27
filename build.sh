@@ -121,7 +121,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【真·預裝核心】DAED 二進制與 LuCI 選單完整提取注入
+# 6. 【DAED 與 Argon 完整注入】
 DAED_PREINSTALLED=false
 mkdir -p packages
 
@@ -142,55 +142,21 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     wget -q -c --timeout=20 --tries=3 "$ARGON_URL" -P packages/ || true
   fi
 
-  # (B) daed 與 luci-app-daed：下載並使用官方 host apk 解壓進 files/
+  # (B) daed 二進制核心與 LuCI 介面直植入 files/
   if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
-    echo "下載 DAED 核心與 LuCI 介面包..."
-    mkdir -p /tmp/daed_dl files/usr/bin files/etc/init.d files/etc/daed
+    echo "正在下載 DAED 核心與 LuCI 介面組件..."
+    mkdir -p files/usr/bin files/etc/init.d files/etc/daed files/usr/share/luci/menu.d files/usr/share/rpcd/acl.d
 
-    if [ "$is_apk" = true ]; then
-      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
-      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed-1.4-r1-openwrt-25.12.apk"
-    else
-      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed_2026.07.31-r1_x86_64-openwrt-24.10.ipk"
-      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
+    # 1. 直接下載官方 x86_64 二進制執行檔
+    wget -q -c --timeout=25 --tries=3 "https://github.com/daeuniverse/daed/releases/download/v0.8.0/daed-linux-x86_64.tar.gz" -O /tmp/daed_bin.tar.gz || true
+    if [ -f "/tmp/daed_bin.tar.gz" ]; then
+      tar -xzf /tmp/daed_bin.tar.gz -C /tmp/ 2>/dev/null || true
+      mv -f /tmp/daed-linux-x86_64 files/usr/bin/daed 2>/dev/null || true
+      rm -f /tmp/daed_bin.tar.gz
     fi
 
-    # 使用 curl -fL 確保 404 時不會寫入錯誤網頁
-    curl -fL -sS --connect-timeout 20 --retry 3 "$DAED_BIN_URL" -o /tmp/daed_dl/daed_core.pkg || echo "⚠️ 下載 DAED 核心失敗"
-    curl -fL -sS --connect-timeout 20 --retry 3 "$DAED_LUCI_URL" -o /tmp/daed_dl/daed_luci.pkg || echo "⚠️ 下載 DAED LuCI 失敗"
-
-    echo "正在提取安裝包並直接注入固件檔案系統..."
-    for p_file in /tmp/daed_dl/*.pkg; do
-      [ -s "$p_file" ] || continue
-      echo "正在提取組件: $(basename "$p_file")..."
-      
-      # 方案 1: 使用 ImageBuilder 自帶的 host apk 工具官方提取 (針對 25.12)
-      if [ "$is_apk" = true ] && [ -x "staging_dir/host/bin/apk" ]; then
-        ./staging_dir/host/bin/apk extract --allow-untrusted --destination "$PWD/files/" "$p_file" 2>/dev/null || true
-      fi
-      
-      # 方案 2: 使用 7z 萬能解包輔助
-      if command -v 7z >/dev/null 2>&1; then
-        mkdir -p /tmp/pkg_7z
-        7z x -y "$p_file" -o/tmp/pkg_7z/ >/dev/null 2>&1 || true
-        if [ -f "/tmp/pkg_7z/data.tar.gz" ]; then
-          tar -xzf /tmp/pkg_7z/data.tar.gz -C "$PWD/files/" 2>/dev/null || true
-        fi
-        cp -rf /tmp/pkg_7z/* "$PWD/files/" 2>/dev/null || true
-        rm -rf /tmp/pkg_7z
-      fi
-      
-      # 方案 3: 針對 24.10 ipk 的標準解壓
-      if tar -tf "$p_file" 2>/dev/null | grep -q "data.tar.gz"; then
-        tar -xzf "$p_file" data.tar.gz -O 2>/dev/null | tar -xzf - -C "$PWD/files/" 2>/dev/null || true
-      fi
-    done
-
-    rm -rf files/.PKGINFO files/.SIGN.* files/control.tar.gz files/data.tar.gz files/debian-binary /tmp/daed_dl 2>/dev/null || true
-
-    # 確保標準 init.d 服務腳本存在
-    if [ ! -f "files/etc/init.d/daed" ]; then
-      cat <<'INITSCRIPT' > files/etc/init.d/daed
+    # 2. 確保標準 init.d 啟動服務腳本
+    cat <<'INITSCRIPT' > files/etc/init.d/daed
 #!/bin/sh /etc/rc.common
 
 START=99
@@ -215,20 +181,44 @@ stop_service() {
     killall daed 2>/dev/null || true
 }
 INITSCRIPT
-    fi
+
+    # 3. 【核心關鍵】在 LuCI 網頁後台註冊 DAED 選單項目 (Services -> DAED)
+    cat <<'LUCIMENU' > files/usr/share/luci/menu.d/luci-app-daed.json
+{
+  "admin/services/daed": {
+    "title": "DAED",
+    "action": {
+      "type": "template",
+      "path": "daed/view"
+    },
+    "order": 60
+  }
+}
+LUCIMENU
+
+    mkdir -p files/usr/lib/lua/luci/view/daed
+    cat <<'LUCIVIEW' > files/usr/lib/lua/luci/view/daed/view.htm
+<%+header%>
+<div class="cbi-map">
+  <h2>DAED Dashboard</h2>
+  <div class="cbi-map-descr">DAED is running on port 2023. Click the button below to open the dashboard.</div>
+  <fieldset class="cbi-section">
+    <p>
+      <a class="btn cbi-button-action" href="http://<%=luci.http.getenv('SERVER_NAME')%>:2023" target="_blank">Open DAED Web Dashboard (Port 2023)</a>
+    </p>
+  </fieldset>
+</div>
+<%+footer%>
+LUCIVIEW
 
     chmod +x files/usr/bin/daed files/etc/init.d/daed 2>/dev/null || true
 
-    # 驗證二進制與 LuCI 選單實體
     if [ -f "files/usr/bin/daed" ]; then
-      echo "✓ DAED 二進制核心注入成功: /usr/bin/daed ($(ls -lh files/usr/bin/daed | awk '{print $5}'))"
+      echo "✓ DAED 二進制檔案注入成功: $(ls -lh files/usr/bin/daed | awk '{print $5}')"
       DAED_PREINSTALLED=true
     fi
 
-    if [ -f "files/usr/share/luci/menu.d/luci-app-daed.json" ] || [ -f "files/usr/lib/lua/luci/controller/daed.lua" ]; then
-      echo "✓ DAED LuCI 網頁選單注入成功！"
-    fi
-
+    # 補充官方運行時依賴
     PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD kmod-tun ca-bundle"
     PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/daed//g; s/luci-app-daed//g; s/vmlinux-btf//g')
   fi
