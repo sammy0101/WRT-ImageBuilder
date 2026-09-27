@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 02:57:12 UTC 2026
+Generated on: Sun Sep 27 03:05:23 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -443,7 +443,7 @@ fi
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 23.05 / 24.10 / 25.12+，支援 OpenWrt 自動注入擴充源解鎖代理外掛
+# 支援 23.05 / 24.10 / 25.12+，支援記錄已安裝套件與自動轉換 VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -518,12 +518,11 @@ tar -xf "$WORKDIR/$ARCHIVE_NAME" -C "$WORKDIR"
 EXTRACTED_DIR=$(find "$WORKDIR" -maxdepth 1 -type d -name "*imagebuilder*" | head -n 1)
 cd "$EXTRACTED_DIR"
 
-# 4. 【核心改進】若為 OpenWrt，自動注入相容擴充源以解鎖代理外掛
+# 4. 若為 OpenWrt，自動注入相容擴充源以解鎖代理外掛
 if [[ "${FW_TYPE,,}" == "openwrt" ]] && [ -f "repositories.conf" ]; then
   echo "ℹ️ 檢測為 OpenWrt 官方原版：正在關閉強制簽名驗證並注入擴充源..."
   sed -i 's/^option check_signature/# option check_signature/g' repositories.conf
   
-  # 自動抓取對應架構 (例: x86_64, aarch64_cortex-a53 等)
   PKG_ARCH=$(grep -m1 '/packages/' repositories.conf | sed -n 's|.*/packages/\([^/]*\)/.*|\1|p' || echo "")
   if [ -n "$PKG_ARCH" ]; then
     echo "src/gz custom_luci https://downloads.immortalwrt.org/releases/${FW_VER}/packages/${PKG_ARCH}/luci" >> repositories.conf
@@ -555,12 +554,10 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman luci-i18n-dockerman-zh-tw"
 fi
 
-# 若為 25.12+ (apk 架構)，清理舊式 opkg 依賴
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
 fi
 
-# 若為原版 OpenWrt，自動剔除因缺少內核補丁而無法安裝的 TurboACC
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
 fi
@@ -580,6 +577,8 @@ execute_make_image() {
     FILES="files" \
     ROOTFS_PARTSIZE="$PARTSIZE_MB" \
     BIN_DIR="$OUTPUT_DIR" 2>&1 | tee "$log_tmp"; then
+    # 紀錄成功安裝的外掛清單
+    echo "$current_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
     return 0
   fi
 
@@ -606,13 +605,17 @@ execute_make_image() {
     echo "修正後的軟體包列表: $cleaned_pkgs"
     echo ""
 
-    make image \
+    if make image \
       PROFILE="$PROFILE_NAME" \
       PACKAGES="$cleaned_pkgs" \
       FILES="files" \
       ROOTFS_PARTSIZE="$PARTSIZE_MB" \
-      BIN_DIR="$OUTPUT_DIR"
-    return $?
+      BIN_DIR="$OUTPUT_DIR"; then
+      # 紀錄自癒後真正成功安裝的外掛清單
+      echo "$cleaned_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
+      return 0
+    fi
+    return 1
   fi
 
   return 1
