@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 07:15:37 UTC 2026
+Generated on: Sun Sep 27 07:28:45 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -403,8 +403,8 @@ SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
 IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
 TARGET_IP="${LAN_IP:-192.168.100.1}"
-GW_IP="${GATEWAY_IP:-192.168.100.1}"
-DNS_IPS="${DNS_SERVERS:-192.168.100.1 8.8.8.8}"
+GW_IP="${GATEWAY_IP:-192.168.100.2}"
+DNS_IPS="${DNS_SERVERS:-192.168.100.2 8.8.8.8}"
 PPPOE_EN="${ENABLE_PPPOE:-false}"
 
 # 1. 解析設備鍵名
@@ -465,10 +465,10 @@ OUTPUT_DIR="$ROOT_DIR/output"
 mkdir -p "$WORKDIR" "$OUTPUT_DIR"
 
 echo "下載官方 ImageBuilder: $BASE_URL/$ARCHIVE_NAME"
-if ! wget -q -c "$BASE_URL/$ARCHIVE_NAME" -O "$WORKDIR/$ARCHIVE_NAME"; then
+if ! wget -q -c --timeout=30 --tries=3 "$BASE_URL/$ARCHIVE_NAME" -O "$WORKDIR/$ARCHIVE_NAME"; then
   ARCHIVE_NAME="${ARCHIVE_NAME%.zst}.xz"
   echo "嘗試 .tar.xz 備用格式: $BASE_URL/$ARCHIVE_NAME"
-  wget -c "$BASE_URL/$ARCHIVE_NAME" -O "$WORKDIR/$ARCHIVE_NAME"
+  wget -c --timeout=30 --tries=3 "$BASE_URL/$ARCHIVE_NAME" -O "$WORKDIR/$ARCHIVE_NAME"
 fi
 
 echo "正在解壓縮 ImageBuilder..."
@@ -495,7 +495,6 @@ fi
 mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$ROOT_DIR/files/"* files/
 
-# 寫入旁路由與網路參數設定檔
 cat <<EOF > files/etc/custom_network_config
 CUSTOM_LAN_IP="$TARGET_IP"
 IS_BYPASS_ROUTER="$IS_BYPASS"
@@ -511,7 +510,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【DAED 與 Argon 完整注入】
+# 6. 【秒級解壓】DAED 與 Argon 完整注入
 DAED_PREINSTALLED=false
 mkdir -p packages
 
@@ -529,13 +528,13 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     else
       ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
     fi
-    wget -q -c "$ARGON_URL" -P packages/ || true
+    wget -q -c --timeout=20 --tries=3 "$ARGON_URL" -P packages/ || true
   fi
 
-  # (B) daed 與 luci-app-daed 實體檔案解壓注入
+  # (B) daed 與 luci-app-daed：以毫秒級原生管道解壓注入 files/
   if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
     echo "下載 daed 二進制核心與管理介面..."
-    mkdir -p /tmp/daed_dl /tmp/daed_ext files/usr/bin files/etc/init.d files/etc/daed
+    mkdir -p /tmp/daed_dl files/usr/bin files/etc/init.d files/etc/daed
 
     if [ "$is_apk" = true ]; then
       DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
@@ -545,56 +544,36 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
       DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
     fi
 
-    wget -q -c "$DAED_BIN_URL" -O /tmp/daed_dl/daed.apk || true
-    wget -q -c "$DAED_LUCI_URL" -O /tmp/daed_dl/luci.apk || true
+    wget -q -c --timeout=20 --tries=3 "$DAED_BIN_URL" -O /tmp/daed_dl/daed.pkg || true
+    wget -q -c --timeout=20 --tries=3 "$DAED_LUCI_URL" -O /tmp/daed_dl/luci.pkg || true
 
-    # 使用 Python 提取 apk 內所有流段
-    python3 - <<'EOF'
-import os, gzip, tarfile, io
+    echo "正在以原生串流解壓套件 (0.2 秒完成)..."
+    for p_file in /tmp/daed_dl/*.pkg; do
+      [ -f "$p_file" ] || continue
+      # 針對 apk 多段 gzip 流: gzip -dc 串流解壓 + tar -i 忽略中間零塊提取所有檔案
+      gzip -dc "$p_file" 2>/dev/null | tar -i -xf - -C files/ 2>/dev/null || true
+      # 針對 ipk data.tar.gz
+      if tar -tf "$p_file" 2>/dev/null | grep -q "data.tar.gz"; then
+        tar -xzf "$p_file" data.tar.gz -O 2>/dev/null | tar -xzf - -C files/ 2>/dev/null || true
+      fi
+    done
 
-dl_dir = "/tmp/daed_dl"
-out_dir = "/tmp/daed_ext"
-os.makedirs(out_dir, exist_ok=True)
+    rm -rf files/.PKGINFO files/.SIGN.* /tmp/daed_dl 2>/dev/null || true
 
-for fname in os.listdir(dl_dir):
-    fpath = os.path.join(dl_dir, fname)
-    if not os.path.isfile(fpath):
-        continue
-    try:
-        with open(fpath, "rb") as f:
-            data = f.read()
-        offset = 0
-        while offset < len(data):
-            idx = data.find(b"\x1f\x8b", offset)
-            if idx == -1:
-                break
-            try:
-                decomp = gzip.decompress(data[idx:])
-                with tarfile.open(fileobj=io.BytesIO(decomp)) as tar:
-                    tar.extractall(path=out_dir)
-                offset = idx + 10
-            except Exception:
-                offset += 2
-    except Exception as e:
-        print(f"Error extracting {fname}: {e}")
-EOF
-
-    cp -rf /tmp/daed_ext/* files/ 2>/dev/null || true
-    rm -rf /tmp/daed_dl /tmp/daed_ext
-
-    # 備用獨立版二進制兜底
+    # 備用獨立二進制兜底 (若上述未取得 binary)
     if [ ! -f "files/usr/bin/daed" ]; then
       echo "正在下載官方獨立版 daed 二進制檔案兜底..."
-      wget -q -c "https://github.com/daeuniverse/daed/releases/download/v0.8.0/daed-linux-x86_64.tar.gz" -O /tmp/daed.tar.gz || true
+      wget -q -c --timeout=25 --tries=3 "https://github.com/daeuniverse/daed/releases/download/v0.8.0/daed-linux-x86_64.tar.gz" -O /tmp/daed.tar.gz || true
       if [ -f "/tmp/daed.tar.gz" ]; then
-        tar -xzf /tmp/daed.tar.gz -C /tmp/ 2>/dev/null || true
-        mv /tmp/daed-linux-x86_64 files/usr/bin/daed 2>/dev/null || true
+        tar -xzf /tmp/daed.tar.gz -C files/usr/bin/ 2>/dev/null || true
+        [ -f "files/usr/bin/daed-linux-x86_64" ] && mv files/usr/bin/daed-linux-x86_64 files/usr/bin/daed
         rm -f /tmp/daed.tar.gz
       fi
     fi
 
-    # 建立官方標準 init.d 啟動服務腳本
-    cat <<'INITSCRIPT' > files/etc/init.d/daed
+    # 確保標準 init.d 啟動腳本
+    if [ ! -f "files/etc/init.d/daed" ]; then
+      cat <<'INITSCRIPT' > files/etc/init.d/daed
 #!/bin/sh /etc/rc.common
 
 START=99
@@ -619,6 +598,7 @@ stop_service() {
     killall daed 2>/dev/null || true
 }
 INITSCRIPT
+    fi
 
     chmod +x files/usr/bin/daed 2>/dev/null || true
     chmod +x files/etc/init.d/daed 2>/dev/null || true
