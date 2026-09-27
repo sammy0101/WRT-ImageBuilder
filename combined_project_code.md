@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 03:17:34 UTC 2026
+Generated on: Sun Sep 27 03:28:33 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -443,15 +443,14 @@ fi
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 23.05 / 24.10 / 25.12+，絕對路徑防禦 + 自動轉換 VMware .vmdk
+# 支援 23.05 / 24.10 / 25.12+，支援第三方外部外掛自動下載注入 (解決 OpenWrt 源缺失問題)
 # ==============================================================================
 set -euo pipefail
 
-# 鎖定專案根目錄絕對路徑，避免 cd 後相對路徑偏差
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 FW_TYPE="${FIRMWARE_TYPE:-ImmortalWrt}"
-FW_VER="${VERSION:-25.12.2}"
+FW_VER="${VERSION:-25.12.5}"
 SELECTED_DEVICE="${DEVICE_MODEL:-x86_generic}"
 SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
@@ -521,20 +520,84 @@ tar -xf "$WORKDIR/$ARCHIVE_NAME" -C "$WORKDIR"
 EXTRACTED_DIR=$(find "$WORKDIR" -maxdepth 1 -type d -name "*imagebuilder*" | head -n 1)
 cd "$EXTRACTED_DIR"
 
-# 4. 若為 OpenWrt，自動注入相容擴充源
-if [[ "${FW_TYPE,,}" == "openwrt" ]] && [ -f "repositories.conf" ]; then
-  echo "ℹ️ 檢測為 OpenWrt 官方原版：正在關閉強制簽名驗證並注入擴充源..."
-  sed -i 's/^option check_signature/# option check_signature/g' repositories.conf
-  
-  PKG_ARCH=$(grep -m1 '/packages/' repositories.conf | sed -n 's|.*/packages/\([^/]*\)/.*|\1|p' || echo "")
-  if [ -n "$PKG_ARCH" ]; then
-    echo "src/gz custom_luci https://downloads.immortalwrt.org/releases/${FW_VER}/packages/${PKG_ARCH}/luci" >> repositories.conf
-    echo "src/gz custom_packages https://downloads.immortalwrt.org/releases/${FW_VER}/packages/${PKG_ARCH}/packages" >> repositories.conf
-    echo "✓ 已成功為 OpenWrt 注入相容擴充倉庫 (架構: $PKG_ARCH)"
-  fi
+# 4. 讀取並整合軟體包清單
+source "$ROOT_DIR/shell/custom-packages.sh"
+PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
+
+if [[ "$DOCKER_FLAG" == "true" ]]; then
+  echo "✓ 已勾選整合 Docker 與 Dockerman 管理套件"
+  PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman luci-i18n-dockerman-zh-tw"
 fi
 
-# 5. 整合 Overlay 檔案 (使用絕對路徑)
+# 判斷是否為 25.12+ (apk 包管理器架構)
+is_apk=false
+if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
+  is_apk=true
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
+fi
+
+# 5. 【核心升級】針對 OpenWrt 官方源缺少的外掛，自動從 Release 下載放入 packages/ 本地倉庫
+mkdir -p packages
+
+# 設置 GitHub API 請求頭防限流
+AUTH_HEADER=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  AUTH_HEADER=(-H "Authorization: Bearer $GITHUB_TOKEN")
+fi
+
+if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+  echo ""
+  echo "=========================================================="
+  echo "  偵測到 OpenWrt 原版系統，啟動外部第三方外掛補齊下載器..."
+  echo "=========================================================="
+
+  # --- (A) luci-theme-argon 補齊 ---
+  if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
+    echo "正在下載相容的 luci-theme-argon..."
+    if [ "$is_apk" = true ]; then
+      ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
+    else
+      ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
+    fi
+    wget -q -c "$ARGON_URL" -P packages/ || echo "⚠️ 下載 argon 失敗，將嘗試官方源"
+  fi
+
+  # --- (B) daed 與 luci-app-daed 補齊 ---
+  if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
+    echo "正在下載相容的 daed 與 LuCI 面板..."
+    if [ "$is_apk" = true ]; then
+      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
+      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed-1.4-r1-openwrt-25.12.apk"
+    else
+      DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed_2026.07.31-r1_x86_64-openwrt-24.10.ipk"
+      DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
+    fi
+    wget -q -c "$DAED_BIN_URL" -P packages/ || true
+    wget -q -c "$DAED_LUCI_URL" -P packages/ || true
+    # 自動補齊前端介面包
+    PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD luci-app-daed"
+  fi
+
+  # --- (C) luci-app-openclash 補齊 ---
+  if [[ " $PACKAGES_TO_BUILD " =~ " luci-app-openclash " ]]; then
+    echo "正在下載相容的 OpenClash..."
+    OPENCLASH_URL="https://github.com/vernesong/OpenClash/releases/download/v0.46.075/luci-app-openclash_0.46.075_all.ipk"
+    wget -q -c "$OPENCLASH_URL" -P packages/ || true
+  fi
+
+  # 剔除原版無法使用的 turboacc
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
+
+  echo "✓ 本地第三方軟體包庫檔案清單:"
+  ls -lh packages/ || true
+  echo "=========================================================="
+  echo ""
+fi
+
+PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
+echo "最終包含軟體包列表: $PACKAGES_TO_BUILD"
+
+# 6. 整合 Overlay 檔案 (files 系統覆蓋層)
 mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$ROOT_DIR/files/"* files/
 
@@ -547,26 +610,6 @@ PPPOE_ACCOUNT="${PPPOE_ACCOUNT:-}"
 PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
-
-# 6. 整合軟體包清單 (使用絕對路徑讀取 custom-packages.sh)
-source "$ROOT_DIR/shell/custom-packages.sh"
-PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
-
-if [[ "$DOCKER_FLAG" == "true" ]]; then
-  echo "✓ 已勾選整合 Docker 與 Dockerman 管理套件"
-  PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman luci-i18n-dockerman-zh-tw"
-fi
-
-if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
-fi
-
-if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
-fi
-
-PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
-echo "最終包含軟體包列表: $PACKAGES_TO_BUILD"
 
 # 7. 帶有容錯自癒（Self-Healing）的打包程序
 execute_make_image() {
