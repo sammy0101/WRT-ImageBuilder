@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 23.05 / 24.10 / 25.12+，支援記錄已安裝套件與自動轉換 VMware .vmdk
+# 支援 23.05 / 24.10 / 25.12+，絕對路徑防禦 + 自動轉換 VMware .vmdk
 # ==============================================================================
 set -euo pipefail
+
+# 鎖定專案根目錄絕對路徑，避免 cd 後相對路徑偏差
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 FW_TYPE="${FIRMWARE_TYPE:-ImmortalWrt}"
 FW_VER="${VERSION:-25.12.2}"
@@ -15,7 +18,7 @@ PPPOE_EN="${ENABLE_PPPOE:-false}"
 
 # 1. 解析設備鍵名
 DEVICE_KEY=$(echo "$SELECTED_DEVICE" | cut -d':' -f1 | tr -d ' ')
-DEVICES_FILE="$PWD/data/devices.json"
+DEVICES_FILE="$ROOT_DIR/data/devices.json"
 
 TARGET_INPUT=""
 PROFILE_NAME=""
@@ -60,8 +63,8 @@ else
   ARCHIVE_NAME="immortalwrt-imagebuilder-${FW_VER}-${TARGET_DIR}-${SUBTARGET_DIR}.Linux-x86_64.tar.zst"
 fi
 
-WORKDIR="$PWD/build_workspace"
-OUTPUT_DIR="$PWD/output"
+WORKDIR="$ROOT_DIR/build_workspace"
+OUTPUT_DIR="$ROOT_DIR/output"
 mkdir -p "$WORKDIR" "$OUTPUT_DIR"
 
 echo "下載官方 ImageBuilder: $BASE_URL/$ARCHIVE_NAME"
@@ -76,7 +79,7 @@ tar -xf "$WORKDIR/$ARCHIVE_NAME" -C "$WORKDIR"
 EXTRACTED_DIR=$(find "$WORKDIR" -maxdepth 1 -type d -name "*imagebuilder*" | head -n 1)
 cd "$EXTRACTED_DIR"
 
-# 4. 若為 OpenWrt，自動注入相容擴充源以解鎖代理外掛
+# 4. 若為 OpenWrt，自動注入相容擴充源
 if [[ "${FW_TYPE,,}" == "openwrt" ]] && [ -f "repositories.conf" ]; then
   echo "ℹ️ 檢測為 OpenWrt 官方原版：正在關閉強制簽名驗證並注入擴充源..."
   sed -i 's/^option check_signature/# option check_signature/g' repositories.conf
@@ -89,9 +92,9 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]] && [ -f "repositories.conf" ]; then
   fi
 fi
 
-# 5. 整合 Overlay 檔案
+# 5. 整合 Overlay 檔案 (使用絕對路徑)
 mkdir -p files/etc/uci-defaults files/etc/config
-cp -r "$PWD/../../files/"* files/
+cp -r "$ROOT_DIR/files/"* files/
 
 echo "CUSTOM_LAN_IP=\"$TARGET_IP\"" > files/etc/custom_lan_ip
 
@@ -103,8 +106,8 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 整合軟體包清單
-source "$PWD/../../shell/custom-packages.sh"
+# 6. 整合軟體包清單 (使用絕對路徑讀取 custom-packages.sh)
+source "$ROOT_DIR/shell/custom-packages.sh"
 PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
 
 if [[ "$DOCKER_FLAG" == "true" ]]; then
@@ -135,7 +138,6 @@ execute_make_image() {
     FILES="files" \
     ROOTFS_PARTSIZE="$PARTSIZE_MB" \
     BIN_DIR="$OUTPUT_DIR" 2>&1 | tee "$log_tmp"; then
-    # 紀錄成功安裝的外掛清單
     echo "$current_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
     return 0
   fi
@@ -169,7 +171,6 @@ execute_make_image() {
       FILES="files" \
       ROOTFS_PARTSIZE="$PARTSIZE_MB" \
       BIN_DIR="$OUTPUT_DIR"; then
-      # 紀錄自癒後真正成功安裝的外掛清單
       echo "$cleaned_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
       return 0
     fi
