@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 OpenWrt 原版真·二進制直植入 daed + 強制自訂 IP + 自動轉換 VMware .vmdk
+# 支援 OpenWrt 原版預裝 DAED + 官方原裝英文 + 自動轉換 VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -34,10 +34,10 @@ if [ -z "$TARGET_INPUT" ] || [ -z "$PROFILE_NAME" ]; then
 fi
 
 echo "=========================================================="
-echo "  開始構建雲端自訂韌體"
+echo "  開始構建雲端自訂韌體 (英文原生版)"
 echo "  系統類型: $FW_TYPE"
 echo "  系統版本: $FW_VER"
-echo "  所選設備鍵名: $DEVICE_KEY"
+echo "  所選設備: $DEVICE_KEY"
 echo "  目標架構 (Target): $TARGET_INPUT"
 echo "  設備代號 (Profile): $PROFILE_NAME"
 echo "  自訂 LAN IP: $TARGET_IP"
@@ -85,7 +85,7 @@ PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
 
 if [[ "$DOCKER_FLAG" == "true" ]]; then
   echo "✓ 已勾選整合 Docker 與 Dockerman 管理套件"
-  PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman luci-i18n-dockerman-zh-tw"
+  PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman"
 fi
 
 is_apk=false
@@ -108,19 +108,19 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【真·二進制多流解壓】OpenWrt 專屬：daed 完整實體注入 files/
+# 6. 【DAED 與 Argon 完整注入】
 DAED_PREINSTALLED=false
 mkdir -p packages
 
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   echo ""
   echo "=========================================================="
-  echo "  偵測到 OpenWrt 原版系統：執行外部外掛直植入程序..."
+  echo "  正在處理 OpenWrt 第三方外掛 (DAED & Argon)..."
   echo "=========================================================="
 
-  # (A) luci-theme-argon 本地倉庫下載
+  # (A) luci-theme-argon 下載放入本地倉庫
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
-    echo "正在下載相容的 luci-theme-argon..."
+    echo "下載 luci-theme-argon 安裝包..."
     if [ "$is_apk" = true ]; then
       ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
     else
@@ -129,9 +129,11 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     wget -q -c "$ARGON_URL" -P packages/ || true
   fi
 
-  # (B) daed 與 luci-app-daed：多流解壓縮直接釋放進 files/
+  # (B) daed 與 luci-app-daed 實體檔案解壓注入
   if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
-    echo "正在下載 daed 與 LuCI 面板..."
+    echo "下載 daed 二進制核心與管理介面..."
+    mkdir -p /tmp/daed_dl /tmp/daed_ext files/usr/bin files/etc/init.d files/etc/daed
+
     if [ "$is_apk" = true ]; then
       DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
       DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed-1.4-r1-openwrt-25.12.apk"
@@ -140,80 +142,93 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
       DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
     fi
 
-    mkdir -p /tmp/daed_download /tmp/daed_extract
-    wget -q -c "$DAED_BIN_URL" -O /tmp/daed_download/daed.pkg || true
-    wget -q -c "$DAED_LUCI_URL" -O /tmp/daed_download/luci-daed.pkg || true
+    wget -q -c "$DAED_BIN_URL" -O /tmp/daed_dl/daed.apk || true
+    wget -q -c "$DAED_LUCI_URL" -O /tmp/daed_dl/luci.apk || true
 
-    # 使用 python/tarfile 完整提取 apk/ipk 內所有串聯 gzip 區塊 (包含真實資料流)
+    # 使用 Python 提取 apk 內所有流段 (解決一般 tar 無法提取 apk 資料流的問題)
     python3 - <<'EOF'
-import os, gzip, tarfile
+import os, gzip, tarfile, io
 
-dl_dir = "/tmp/daed_download"
-out_dir = "/tmp/daed_extract"
+dl_dir = "/tmp/daed_dl"
+out_dir = "/tmp/daed_ext"
+os.makedirs(out_dir, exist_ok=True)
 
 for fname in os.listdir(dl_dir):
     fpath = os.path.join(dl_dir, fname)
     if not os.path.isfile(fpath):
         continue
     try:
-        # 解開多段串聯的 gzip tar 流
         with open(fpath, "rb") as f:
             data = f.read()
-        
         offset = 0
         while offset < len(data):
+            idx = data.find(b"\x1f\x8b", offset)
+            if idx == -1:
+                break
             try:
-                # 尋找 gzip 魔數 (0x1f, 0x8b)
-                idx = data.find(b"\x1f\x8b", offset)
-                if idx == -1:
-                    break
-                decompressed = gzip.decompress(data[idx:])
-                # 將解開的 tar 提取到目標目錄
-                import io
-                with tarfile.open(fileobj=io.BytesIO(decompressed)) as tar:
+                decomp = gzip.decompress(data[idx:])
+                with tarfile.open(fileobj=io.BytesIO(decomp)) as tar:
                     tar.extractall(path=out_dir)
-                offset = idx + 10 # 推進游標繼續掃描後續區塊
+                offset = idx + 10
             except Exception:
                 offset += 2
     except Exception as e:
-        print(f"提取 {fname} 錯誤: {e}")
+        print(f"Error extracting {fname}: {e}")
 EOF
 
-    # 檢查是否包含嵌套的 data.tar.gz (常見於 ipk)
-    if [ -f "/tmp/daed_extract/data.tar.gz" ]; then
-      tar -xzf /tmp/daed_extract/data.tar.gz -C /tmp/daed_extract/ 2>/dev/null || true
-      rm -f /tmp/daed_extract/data.tar.gz /tmp/daed_extract/control.tar.gz 2>/dev/null || true
+    # 複製所有檔案進 files/
+    cp -rf /tmp/daed_ext/* files/ 2>/dev/null || true
+    rm -rf /tmp/daed_dl /tmp/daed_ext
+
+    # 確保核心二進制存在 (若提取失敗則採用官方獨立二進制兜底)
+    if [ ! -f "files/usr/bin/daed" ]; then
+      echo "正在下載官方獨立版 daed 二進制檔案兜底..."
+      wget -q -c "https://github.com/daeuniverse/daed/releases/download/v0.8.0/daed-linux-x86_64.tar.gz" -O /tmp/daed.tar.gz || true
+      if [ -f "/tmp/daed.tar.gz" ]; then
+        tar -xzf /tmp/daed.tar.gz -C /tmp/ 2>/dev/null || true
+        mv /tmp/daed-linux-x86_64 files/usr/bin/daed 2>/dev/null || true
+        rm -f /tmp/daed.tar.gz
+      fi
     fi
 
-    # 清除套件元數據
-    rm -rf /tmp/daed_extract/.PKGINFO /tmp/daed_extract/.SIGN.* 2>/dev/null || true
+    # 建立官方標準 init.d 啟動服務腳本
+    cat <<'INITSCRIPT' > files/etc/init.d/daed
+#!/bin/sh /etc/rc.common
 
-    # 將提取到的真實二進制檔複製覆蓋進 files/ 韌體檔案系統
-    cp -rf /tmp/daed_extract/* files/ 2>/dev/null || true
-    rm -rf /tmp/daed_download /tmp/daed_extract
+START=99
+USE_PROCD=1
+
+PROG=/usr/bin/daed
+CONF_DIR=/etc/daed
+LOG_DIR=/var/log/daed
+
+start_service() {
+    [ -x "$PROG" ] || return 1
+    mkdir -p "$CONF_DIR" "$LOG_DIR"
+    procd_open_instance
+    procd_set_param command "$PROG" run -c "$CONF_DIR" -l "$LOG_DIR"
+    procd_set_param respawn
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+
+stop_service() {
+    killall daed 2>/dev/null || true
+}
+INITSCRIPT
 
     chmod +x files/usr/bin/daed 2>/dev/null || true
     chmod +x files/etc/init.d/daed 2>/dev/null || true
 
-    # 驗證二進制檔是否真的植入成功
     if [ -f "files/usr/bin/daed" ]; then
-      echo "✓ 驗證成功: /usr/bin/daed 實體檔案已成功寫入固件！大小: $(ls -lh files/usr/bin/daed | awk '{print $5}')"
+      echo "✓ DAED 二進制注入成功: /usr/bin/daed (大小: $(ls -lh files/usr/bin/daed | awk '{print $5}'))"
       DAED_PREINSTALLED=true
-    else
-      echo "⚠️ 警告: 未能在 files/usr/bin/daed 找到實體檔案，嘗試備用下載..."
-      mkdir -p files/usr/bin files/etc/init.d
-      wget -q -c "https://github.com/daeuniverse/daed/releases/download/v0.8.0/daed-linux-x86_64.tar.gz" -O /tmp/daed_standalone.tar.gz || true
-      if [ -f "/tmp/daed_standalone.tar.gz" ]; then
-        tar -xzf /tmp/daed_standalone.tar.gz -C files/usr/bin/ 2>/dev/null || true
-        mv files/usr/bin/daed-linux-x86_64 files/usr/bin/daed 2>/dev/null || true
-        chmod +x files/usr/bin/daed 2>/dev/null || true
-        DAED_PREINSTALLED=true
-      fi
     fi
 
-    # 補充官方源具備的運行時依賴
+    # 補充官方運行時依賴
     PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD kmod-tun ca-bundle"
-    # 從編譯命令中排除 daed，避免 apk 檢查 vmlinux-btf
+    # 從編譯命令中移除 daed，避免 apk 依賴報錯
     PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/daed//g; s/luci-app-daed//g; s/vmlinux-btf//g')
   fi
 
@@ -225,7 +240,7 @@ fi
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
 
-# 7. 帶有智慧容錯自癒（Self-Healing）的打包程序
+# 7. 打包構建
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -246,6 +261,7 @@ execute_make_image() {
     return 0
   fi
 
+  # 容錯自癒機制
   local missing_pkgs=$(grep -E '^\s+[a-zA-Z0-9_\.\-]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
   local parent_raw=$(grep -oE '[a-zA-Z0-9_\.\-]+\[[^]]+\]' "$log_tmp" | cut -d'[' -f1 | grep -v '^world$' | tr '\n' ' ')
   local parent_clean=""
@@ -260,13 +276,7 @@ execute_make_image() {
   local all_culprits=$(echo "$missing_pkgs $parent_clean $missing_opkg $missing_opkg2" | xargs -n1 2>/dev/null | sort -u | xargs 2>/dev/null || echo "")
 
   if [ -n "$all_culprits" ]; then
-    echo ""
-    echo "=========================================================="
-    echo "⚠️ 偵測到以下軟體包在當前環境中無法滿足:"
-    echo "   $all_culprits"
-    echo "🔄 觸發自動自癒機制：清除缺失組件，重新構建..."
-    echo "=========================================================="
-
+    echo "⚠️ 剔除不可用套件: $all_culprits 並重試..."
     local cleaned_pkgs="$current_pkgs"
     for item in $all_culprits; do
       cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )$item( |\$)/ /g")
@@ -274,9 +284,6 @@ execute_make_image() {
       rm -f packages/*"$item"* 2>/dev/null || true
     done
     cleaned_pkgs=$(echo "$cleaned_pkgs" | xargs)
-
-    echo "修正後的軟體包列表: $cleaned_pkgs"
-    echo ""
 
     if make image \
       PROFILE="$PROFILE_NAME" \
@@ -301,22 +308,18 @@ execute_make_image "$PACKAGES_TO_BUILD"
 
 # 8. 自動轉換 VMware .vmdk 虛擬磁碟格式
 if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
-  echo ""
-  echo "=========================================================="
-  echo "  正在將 x86 映像轉換為 VMware (.vmdk) 格式..."
-  echo "=========================================================="
+  echo "正在生成 VMware .vmdk 虛擬磁碟..."
   for img_gz in "$OUTPUT_DIR"/*combined*.img.gz; do
     [ -f "$img_gz" ] || continue
     base_name=$(basename "$img_gz" .img.gz)
     raw_tmp="/tmp/${base_name}.img"
     vmdk_target="$OUTPUT_DIR/${base_name}.vmdk"
 
-    echo "轉換中: $base_name.img.gz -> $base_name.vmdk"
     gzip -dc "$img_gz" > "$raw_tmp"
     qemu-img convert -f raw -O vmdk "$raw_tmp" "$vmdk_target"
     rm -f "$raw_tmp"
   done
-  echo "✓ VMware .vmdk 虛擬磁碟轉換完成！"
+  echo "✓ VMware .vmdk 轉換完成！"
 fi
 
 echo "✓ 產物目錄清單:"
