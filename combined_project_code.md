@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 07:07:44 UTC 2026
+Generated on: Sun Sep 27 07:11:02 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -825,9 +825,9 @@ on:
           - 'ImmortalWrt'
 
       luci_version:
-        description: '韌體版本 (輸入 auto 或 latest 自動抓取最新正式版；亦可自訂輸入如: 25.12.5, 24.10.0)'
+        description: '韌體版本 (預設 auto 自動抓取最新正式版；亦可手動輸入如: 25.12.5, 24.10.0)'
         required: true
-        default: '25.12.5'
+        default: 'auto'
         type: string
 
       rootfs_size_g:
@@ -877,27 +877,27 @@ on:
       # 旁路由與網路配置
       # ==============================================================================
       is_bypass_router:
-        description: '【旁路由開關】是否作為旁路由 / 二級網關模式 (勾選啟用，主路由請保持不勾選)'
+        description: '【旁路由開關】是否作為旁路由 / 二級網關模式 (預設不開啟；勾選為開啟)'
         required: false
         type: boolean
-        default: true
+        default: false
 
       lan_ip:
-        description: '本機 LAN IP (旁路由請填寫與主路由同網段的固定 IP，例如: 192.168.86.111)'
+        description: '本機 LAN IP (主路由預設 192.168.100.1；若為旁路由請輸入同網段固定 IP 如 192.168.100.2)'
         required: false
-        default: '192.168.86.111'
+        default: '192.168.100.1'
         type: string
 
       gateway_ip:
-        description: '【旁路由專用】主路由器網關 IP (旁路由需指向主路由 IP，例如: 192.168.86.1)'
+        description: '【旁路由專用】主路由器網關 IP (旁路由需指向主路由 IP，例如: 192.168.100.1)'
         required: false
-        default: '192.168.86.1'
+        default: '192.168.100.1'
         type: string
 
       dns_servers:
-        description: '【旁路由專用】自訂 DNS 伺服器 (多個請用空格分開，例如: 192.168.86.1 8.8.8.8)'
+        description: '【旁路由專用】自訂 DNS 伺服器 (多個請用空格分開，例如: 192.168.100.1 8.8.8.8)'
         required: false
-        default: '192.168.86.1 8.8.8.8'
+        default: '192.168.100.1 8.8.8.8'
         type: string
 
       include_docker:
