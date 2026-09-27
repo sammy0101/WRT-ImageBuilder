@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 03:41:55 UTC 2026
+Generated on: Sun Sep 27 03:42:27 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -21,7 +21,7 @@ if [ -f "/etc/custom_lan_ip" ]; then
 fi
 TARGET_LAN_IP="${CUSTOM_LAN_IP:-192.168.100.1}"
 
-# 3. 網卡自動偵測邏輯 (單網口自動 DHCP 模式；多網口 eth0=WAN, 其餘網口=LAN)
+# 3. 網卡自動偵測邏輯
 ETH_COUNT=0
 ETH_LIST=""
 
@@ -36,13 +36,11 @@ done
 echo "偵測到的物理網卡數量: $ETH_COUNT (網卡列表: $ETH_LIST)" >> "$LOG_FILE"
 
 if [ "$ETH_COUNT" -le 1 ]; then
-    # 單網口設備 (NAS 虛擬機或旁路由): 設為 DHCP 自動獲取 IP，避免網段衝突
     echo "配置單網口模式: 自動透過上級 DHCP 獲取 IP" >> "$LOG_FILE"
     uci set network.lan.proto='dhcp'
     uci delete network.lan.ipaddr 2>/dev/null
     uci delete network.lan.netmask 2>/dev/null
 else
-    # 多網口設備: eth0 做為 WAN 接口，其餘做為 LAN 接口
     echo "配置多網口模式: 設定 LAN IP 為 $TARGET_LAN_IP" >> "$LOG_FILE"
     uci set network.lan.proto='static'
     uci set network.lan.ipaddr="$TARGET_LAN_IP"
@@ -61,11 +59,17 @@ if [ -f "$PPPOE_CONF" ]; then
     fi
 fi
 
-# 5. 防火牆安全調試設定：預設允許 WAN 入站訪問以利首航連線 (除錯完成後建議關閉)
+# 5. 防火牆安全調試設定
 uci set firewall.@zone[1].input='ACCEPT'
 
 uci commit network
 uci commit firewall
+
+# 6. 【自動啟用 daed 服務】若存在 daed 核心，確保開機自動啟用自啟
+if [ -x "/etc/init.d/daed" ]; then
+    echo "啟用 daed 開機自啟動服務..." >> "$LOG_FILE"
+    /etc/init.d/daed enable 2>/dev/null || true
+fi
 
 echo "=== 首航配置完成 ===" >> "$LOG_FILE"
 exit 0
