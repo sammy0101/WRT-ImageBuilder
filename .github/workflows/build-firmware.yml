@@ -120,7 +120,7 @@ jobs:
       - name: 檢出專案代碼
         uses: actions/checkout@v4
 
-      - name: 安裝編譯相依套件 (含解包與虛擬化工具)
+      - name: 安裝編譯相依套件
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git \
@@ -189,9 +189,9 @@ jobs:
           echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
           if [ "${{ inputs.is_bypass_router }}" = "true" ]; then
             echo "- **網路模式**: 🛡️ 旁路由 / 網關模式 (已關閉 DHCP，啟用 NAT 偽裝)" >> $GITHUB_STEP_SUMMARY
-            echo "- **旁路由 IP**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **本機 LAN IP**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
             echo "- **主路由網關**: ${{ inputs.gateway_ip }}" >> $GITHUB_STEP_SUMMARY
-            echo "- **DNS 伺服器**: ${{ inputs.dns_servers }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **自訂 DNS**: ${{ inputs.dns_servers }}" >> $GITHUB_STEP_SUMMARY
           else
             echo "- **網路模式**: 🌐 標準主路由模式 (DHCP 啟用)" >> $GITHUB_STEP_SUMMARY
             echo "- **管理網址**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
@@ -238,11 +238,11 @@ jobs:
             - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
             - **網路模式**: ${{ inputs.is_bypass_router && '🛡️ 旁路由模式 (DHCP已關閉，NAT偽裝已開啟)' || '🌐 主路由模式' }}
             - **管理網址 (LAN IP)**: `http://${{ inputs.lan_ip }}`
-            ${{ inputs.is_bypass_router && format('- **主路由網關 (Gateway)**: `{0}`\n- **自訂 DNS**: `{1}`', inputs.gateway_ip, inputs.dns_servers) || '' }}
+            ${{ inputs.is_bypass_router && format('- **主路由網關 (Gateway)**: `{0}`', inputs.gateway_ip) || '' }}
+            ${{ inputs.is_bypass_router && format('- **自訂 DNS**: `{0}`', inputs.dns_servers) || '' }}
 
             ### 🔑 預設登入認證資訊
-            - **Web 管理網址**: `http://${{ inputs.lan_ip }}` (登入後選單直接自帶 DAED)
-            - **DAED 控制面板**: `http://${{ inputs.lan_ip }}:2023`
+            - **Web 管理網址**: `http://${{ inputs.lan_ip }}`
             - **使用者名稱 (User)**: `root`
             - **登入密碼 (Password)**: `無密碼（密碼欄留空，直接按登入即可）`
 
