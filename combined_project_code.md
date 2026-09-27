@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 03:28:58 UTC 2026
+Generated on: Sun Sep 27 03:32:50 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -443,7 +443,7 @@ fi
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 23.05 / 24.10 / 25.12+，支援第三方外部外掛自動下載注入 (解決 OpenWrt 源缺失問題)
+# 支援 23.05 / 24.10 / 25.12+，支援第三方外部外掛自動下載注入 + vmlinux-btf 內核補全
 # ==============================================================================
 set -euo pipefail
 
@@ -529,17 +529,15 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman luci-i18n-dockerman-zh-tw"
 fi
 
-# 判斷是否為 25.12+ (apk 包管理器架構)
 is_apk=false
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   is_apk=true
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
 fi
 
-# 5. 【核心升級】針對 OpenWrt 官方源缺少的外掛，自動從 Release 下載放入 packages/ 本地倉庫
+# 5. 針對 OpenWrt 原版，自動從 Release 下載外掛與其內核相依包
 mkdir -p packages
 
-# 設置 GitHub API 請求頭防限流
 AUTH_HEADER=()
 if [ -n "${GITHUB_TOKEN:-}" ]; then
   AUTH_HEADER=(-H "Authorization: Bearer $GITHUB_TOKEN")
@@ -551,7 +549,7 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   echo "  偵測到 OpenWrt 原版系統，啟動外部第三方外掛補齊下載器..."
   echo "=========================================================="
 
-  # --- (A) luci-theme-argon 補齊 ---
+  # --- (A) 下載相容的 luci-theme-argon ---
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
     echo "正在下載相容的 luci-theme-argon..."
     if [ "$is_apk" = true ]; then
@@ -559,30 +557,25 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     else
       ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
     fi
-    wget -q -c "$ARGON_URL" -P packages/ || echo "⚠️ 下載 argon 失敗，將嘗試官方源"
+    wget -q -c "$ARGON_URL" -P packages/ || true
   fi
 
-  # --- (B) daed 與 luci-app-daed 補齊 ---
+  # --- (B) 下載相容的 daed、luci-app-daed 與 vmlinux-btf 內核補全包 ---
   if [[ " $PACKAGES_TO_BUILD " =~ " daed " ]]; then
-    echo "正在下載相容的 daed 與 LuCI 面板..."
+    echo "正在下載相容的 daed、LuCI 面板與 vmlinux-btf 依賴包..."
     if [ "$is_apk" = true ]; then
       DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed-2026.07.31-r1-x86_64-openwrt-25.12.apk"
       DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed-1.4-r1-openwrt-25.12.apk"
+      BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.12-x86_64.apk"
     else
       DAED_BIN_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/daed_2026.07.31-r1_x86_64-openwrt-24.10.ipk"
       DAED_LUCI_URL="https://github.com/QiuSimons/luci-app-daed/releases/download/daed_2026.07.31-r1/luci-app-daed_1.4-r1_all-openwrt-24.10.ipk"
+      BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.6-x86_64.ipk"
     fi
     wget -q -c "$DAED_BIN_URL" -P packages/ || true
     wget -q -c "$DAED_LUCI_URL" -P packages/ || true
-    # 自動補齊前端介面包
-    PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD luci-app-daed"
-  fi
-
-  # --- (C) luci-app-openclash 補齊 ---
-  if [[ " $PACKAGES_TO_BUILD " =~ " luci-app-openclash " ]]; then
-    echo "正在下載相容的 OpenClash..."
-    OPENCLASH_URL="https://github.com/vernesong/OpenClash/releases/download/v0.46.075/luci-app-openclash_0.46.075_all.ipk"
-    wget -q -c "$OPENCLASH_URL" -P packages/ || true
+    wget -q -c "$BTF_URL" -P packages/ || true
+    PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD luci-app-daed vmlinux-btf"
   fi
 
   # 剔除原版無法使用的 turboacc
@@ -611,7 +604,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 7. 帶有容錯自癒（Self-Healing）的打包程序
+# 7. 帶有智慧相依關係追蹤的容錯自癒（Self-Healing）打包程序
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -627,23 +620,28 @@ execute_make_image() {
     return 0
   fi
 
+  # 智慧擷取: 缺失套件名稱 + 引起問題的父級依賴外掛
   local missing_apk=$(grep -E '^\s+[a-zA-Z0-9_\.\-]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
+  local required_by=$(grep -E 'required by:\s*[a-zA-Z0-9_\.\-]+' "$log_tmp" | sed -E 's/.*required by:\s*([a-zA-Z0-9_-]+).*/\1/' | tr '\n' ' ')
   local missing_opkg=$(grep -oE "Unknown package '[^']+'" "$log_tmp" | cut -d"'" -f2 | tr '\n' ' ')
   local missing_opkg2=$(grep -oE "Cannot install package [^.]+" "$log_tmp" | awk '{print $NF}' | tr '\n' ' ')
 
-  local all_missing=$(echo "$missing_apk $missing_opkg $missing_opkg2" | xargs -n1 2>/dev/null | sort -u | xargs 2>/dev/null || echo "")
+  local all_culprits=$(echo "$missing_apk $required_by $missing_opkg $missing_opkg2" | xargs -n1 2>/dev/null | sort -u | xargs 2>/dev/null || echo "")
 
-  if [ -n "$all_missing" ]; then
+  if [ -n "$all_culprits" ]; then
     echo ""
     echo "=========================================================="
-    echo "⚠️ 偵測到當前官方軟體源缺少以下軟體包:"
-    echo "   $all_missing"
-    echo "🔄 觸發自動自癒機制：剔除缺失套件並自動重新構建..."
+    echo "⚠️ 偵測到以下軟體包或其依賴項在當前環境中無法滿足:"
+    echo "   $all_culprits"
+    echo "🔄 觸發自動自癒機制：清除缺失組件與本地暫存，重新構建..."
     echo "=========================================================="
 
     local cleaned_pkgs="$current_pkgs"
-    for pkg in $all_missing; do
-      cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )$pkg( |\$)/ /g")
+    for item in $all_culprits; do
+      # 從編譯命令中移除
+      cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )$item( |\$)/ /g")
+      # 從本地 packages 目錄清除衝突包，避免 apk index 殘留報錯
+      rm -f packages/*"$item"* 2>/dev/null || true
     done
     cleaned_pkgs=$(echo "$cleaned_pkgs" | xargs)
 
