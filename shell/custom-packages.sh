@@ -27,7 +27,7 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-firewall-zh-tw"
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-homeproxy"
 
 # 🟡 [代理外掛] DAED (基於 Linux eBPF 技術的高效透明代理，自帶獨立 Web 面板 端口:2023)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES daed"
+ CUSTOM_PACKAGES="$CUSTOM_PACKAGES daed"
 
 # 🟡 [代理外掛] DAE (基於 eBPF 的輕量版透明代理核心與 LuCI 介面)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-dae"
@@ -79,7 +79,7 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-firewall-zh-tw"
 # 4. 系統美化、終端機與自動維護
 # ==============================================================================
 # 🟢 [雙系統通用] Argon 現代自適應雙色主題
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
+ CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
 
 # 🟢 [雙系統通用] ttyd (免安裝第三方軟體，直接在網頁後台開啟 Linux 終端機)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ttyd luci-i18n-ttyd-zh-tw"
