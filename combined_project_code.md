@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 07:28:45 UTC 2026
+Generated on: Sun Sep 27 07:50:44 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -853,9 +853,6 @@ on:
           - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621)'
           # --- AUTO_DEVICES_END ---
 
-      # ==============================================================================
-      # 旁路由與網路配置
-      # ==============================================================================
       is_bypass_router:
         description: '【旁路由開關】是否作為旁路由 / 二級網關模式 (預設不開啟；勾選為開啟)'
         required: false
@@ -915,12 +912,12 @@ jobs:
       - name: 檢出專案代碼
         uses: actions/checkout@v4
 
-      - name: 安裝編譯相依套件 (含 ISO 與虛擬化轉換工具)
+      - name: 安裝編譯相依套件 (含解包與虛擬化工具)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git \
             gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl qemu-utils \
-            genisoimage dosfstools mtools xorriso
+            genisoimage dosfstools mtools xorriso p7zip-full
           
           if ! command -v mkisofs &>/dev/null && command -v genisoimage &>/dev/null; then
             sudo ln -s "$(which genisoimage)" /usr/local/bin/mkisofs
@@ -1036,8 +1033,8 @@ jobs:
             ${{ inputs.is_bypass_router && format('- **主路由網關 (Gateway)**: `{0}`\n- **自訂 DNS**: `{1}`', inputs.gateway_ip, inputs.dns_servers) || '' }}
 
             ### 🔑 預設登入認證資訊
-            - **Web 管理網址**: `http://${{ inputs.lan_ip }}`
-            - **DAED 控制面板**: `http://${{ inputs.lan_ip }}:2023` (若有啟用 DAED)
+            - **Web 管理網址**: `http://${{ inputs.lan_ip }}` (登入後選單直接自帶 DAED)
+            - **DAED 控制面板**: `http://${{ inputs.lan_ip }}:2023`
             - **使用者名稱 (User)**: `root`
             - **登入密碼 (Password)**: `無密碼（密碼欄留空，直接按登入即可）`
 
