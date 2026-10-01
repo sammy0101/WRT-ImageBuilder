@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Sep 27 08:34:20 UTC 2026
+Generated on: Thu Oct  1 16:40:43 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -259,33 +259,142 @@ if __name__ == "__main__":
 ````sh
 #!/usr/bin/env bash
 # ==============================================================================
-# 自訂擴充軟體包選單 (極簡原生英文版，不含任何多餘依賴)
+# 自訂擴充軟體包選單 (極簡原生英文版，分類齊全)
+#
+# 【使用說明】:
+# 預設僅啟用 LuCI Web 介面與 Argon 主題。
+# 若需要安裝某個外掛，只需刪除該行最前面的「#」號解除註解即可。
+# （Docker 請直接在 GitHub Actions 頁面勾選，此處無需設定）
 # ==============================================================================
 
 CUSTOM_PACKAGES=""
 
-# 1. 核心 Web 管理介面 (官方原生英文)
+# ==============================================================================
+# 0. 核心基礎套件 (預設啟用)
+# ==============================================================================
+# 核心 Web 網頁介面 (原生英文)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci"
 
-# 2. 介面美化主題 (若連主題都不想要、想用官方預設 Bootstrap 主題，可在該行開頭加 #)
+# Argon 現代自適應主題 (若想用官方原生 Bootstrap 主題，可在該行開頭加 #)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
 
 # ==============================================================================
-# 常用可選組件 (按需取消「#」號啟用即可)
+# 1. 代理客戶端與科學上網 (Proxy Clients)
 # ==============================================================================
-# --- 代理客戶端 (原版 OpenWrt 推薦) ---
+# OpenClash (基於 Clash.Meta / Mihomo 內核的進階代理工具)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-openclash"
+
+# PassWall (經典穩定的代理工具，支援 Trojan/VLESS/Hysteria2/TUIC/SS)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-passwall"
 
-# --- 網路與系統工具 ---
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ttyd"
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-upnp"
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-wol"
+# HomeProxy (ImmortalWrt 官方主推，基於 sing-box 的高效能透明代理)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-homeproxy"
+
+# Mihomo (新一代輕量化 Clash.Meta 原生 LuCI 面板)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mihomo"
+
+# ShadowSocksR Plus+ (SSR-Plus 老牌代理工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ssr-plus"
+
+# v2rayA (基於 Xray/V2Ray 核心的多協議網頁版客戶端)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-v2raya"
+
+# ==============================================================================
+# 2. DNS 防污染、解析加速與廣告過濾 (DNS & AdBlock)
+# ==============================================================================
+# SmartDNS (本機防污染 DNS 伺服器，支援測速、分流與快取優化)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-smartdns"
+
+# MosDNS (現代化模組化 DNS 分流工具，常與各類代理搭配)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mosdns"
+
+# AdGuard Home (全網絡廣告與隱私追蹤攔截 DNS 伺服器)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-adguardhome"
+
+# Adblock (官方輕量原生廣告過濾外掛)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-adblock"
+
+# ==============================================================================
+# 3. 異地組網、內網穿透與虛擬私有網路 (VPN & Network Tunnel)
+# ==============================================================================
+# Tailscale (跨平台 WireGuard 零設定異地互聯)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES tailscale iptables-nft"
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-wireguard"
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-tailscale"
+
+# ZeroTier (虛擬區域網路 P2P 穿透互聯)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-zerotier"
+
+# WireGuard (現代輕量高效能 VPN 通道)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-wireguard"
+
+# FRP Client (內網穿透客戶端，將內網服務映射至公網伺服器)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-frpc"
+
+# ==============================================================================
+# 4. 常用網路功能、喚醒與動態域名 (Network Utilities)
+# ==============================================================================
+# UPnP 自動通訊埠對應 (BT/PT 下載與遊戲聯網必備)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-upnp"
+
+# WOL 網路喚醒 (遠端喚醒區域網路內的電腦/NAS/伺服器)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-wol"
+
+# DDNS 動態域名解析 (搭配 Cloudflare/Aliyun 解析浮動公網 IP)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ddns"
+
+# Socat 通訊埠轉發工具 (支援 IPv4/IPv6 雙向轉發)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-socat"
+
+# MWAN3 (多 WAN 線路接入、多撥與負載均衡)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mwan3"
+
+# SQM 流量控制 (智慧隊列管理，徹底解決 Bufferbloat 高延遲問題)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-sqm"
+
+# ==============================================================================
+# 5. 系統監控、頻寬統計與自動維護 (System & Monitoring)
+# ==============================================================================
+# ttyd (直接在網頁後台開啟 Linux 終端機)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ttyd"
+
+# 定時自動重啟 (維持設備長時間穩定運行)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-autoreboot"
+
+# NLBWMon 流量統計 (即時與歷史監控各聯網設備的頻寬消耗)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-nlbwmon"
+
+# Statistics (基於 collectd 的圖表監控，可看 CPU 溫度、負載、即時流量曲線)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-statistics"
+
+# ==============================================================================
+# 6. 磁碟管理、NAS 檔案共用與下載 (Storage, NAS & Downloads)
+# ==============================================================================
+# Diskman (磁碟分區、格式化與硬碟健康度 SMART 掛載管理)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-diskman"
+
+# Samba 4 (Windows 網路芳鄰/局域網高速檔案共用)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-samba4"
+
+# 硬碟定時休眠 (保護外接 USB/SATA 機械硬碟壽命與節能)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-hd-idle"
+
+# Aria2 (輕量化高效能離線下載工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-aria2"
+
+# Transmission (經典 BT / PT 下載工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-transmission"
+
+# qBittorrent (功能強大的 BitTorrent / PT 下載客戶端)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-qbittorrent"
+
+# ==============================================================================
+# 7. 常用命令列排錯與測速工具 (CLI Utilities & Diagnostics)
+# ==============================================================================
+# 常用硬體與系統工具 (curl, wget, htop, 磁碟工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES curl wget-ssl htop lsblk fdisk e2fsprogs"
+
+# 網路測速工具 (iperf3 局域網測速)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES iperf3"
 
 export CUSTOM_PACKAGES
 
@@ -681,32 +790,170 @@ on:
           # --- AUTO_DEVICES_START ---
           - 'x86_generic: [x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)'
           - 'x86_legacy: [x86] 傳統 BIOS 引導舊主機 (Legacy MBR)'
-          - 'nanopi_r2s: [NanoPi] 友善 NanoPi R2S'
-          - 'nanopi_r2c: [NanoPi] 友善 NanoPi R2C'
-          - 'nanopi_r4s: [NanoPi] 友善 NanoPi R4S'
-          - 'nanopi_r4se: [NanoPi] 友善 NanoPi R4SE'
-          - 'nanopi_r5s: [NanoPi] 友善 NanoPi R5S'
-          - 'nanopi_r5c: [NanoPi] 友善 NanoPi R5C'
-          - 'nanopi_r6s: [NanoPi] 友善 NanoPi R6S'
-          - 'nanopi_r6c: [NanoPi] 友善 NanoPi R6C'
+          - 'nanopi_r2s: [友善] NanoPi R2S (雙千兆經典軟路由)'
+          - 'nanopi_r2c: [友善] NanoPi R2C (雙千兆軟路由)'
+          - 'nanopi_r4s: [友善] NanoPi R4S (RK3399 高效軟路由)'
+          - 'nanopi_r4se: [友善] NanoPi R4SE (內建 eMMC 高效軟路由)'
+          - 'nanopi_r5s: [友善] NanoPi R5S (三網口 雙 2.5G 軟路由)'
+          - 'nanopi_r5c: [友善] NanoPi R5C (雙 2.5G 迷你軟路由)'
+          - 'nanopi_r6s: [友善] NanoPi R6S (RK3588 雙 2.5G 旗艦軟路由)'
+          - 'nanopi_r6c: [友善] NanoPi R6C (RK3588 旗艦軟路由)'
           - 'rpi_4: [樹莓派] Raspberry Pi 4 Model B / CM4'
-          - 'rpi_5: [樹莓派] Raspberry Pi 5'
+          - 'rpi_5: [樹莓派] Raspberry Pi 5 (新一代高效單板電腦)'
           - 'rpi_3: [樹莓派] Raspberry Pi 3 Model B / B+'
-          - 'redmi_ax6000: [紅米] Redmi AX6000 (MT7986)'
-          - 'xiaomi_ax3000t: [小米] 小米路由器 AX3000T'
-          - 'xiaomi_wr30u: [小米] 小米路由器 WR30U'
+          - 'redmi_ax6000: [紅米] Redmi AX6000 (MT7986 旗艦家用路由)'
+          - 'xiaomi_ax3000t: [小米] 小米路由器 AX3000T (高 CP 值 Wi-Fi 6)'
+          - 'xiaomi_wr30u: [小米] 小米路由器 WR30U (一般版 / 電信運營商版)'
           - 'redmi_ax3200: [紅米] Redmi AX3200 / 小米 AX6S'
-          - 'xiaomi_4a_gigabit: [小米] 小米路由器 4A 千兆版 (Gigabit)'
-          - 'glinet_mt3000: [GL.iNet] GL-MT3000 (Beryl AX)'
-          - 'glinet_mt6000: [GL.iNet] GL-MT6000 (Flint 2)'
-          - 'glinet_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2)'
-          - 'glinet_axt1800: [GL.iNet] GL-AXT1800 (Slate AX)'
-          - 'glinet_ax1800: [GL.iNet] GL-AX1800 (Flint)'
-          - 'asus_tuf_ax4200: [華碩] ASUS TUF Gaming AX4200'
-          - 'tplink_xdr6088: [TP-Link] TL-XDR6088 雙 2.5G 路由器'
-          - 'qihoo_360t7: [360] 360 T7 路由器'
-          - 'jcg_q30pro: [捷稀] JCG Q30 Pro'
-          - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621)'
+          - 'xiaomi_4a_gigabit: [小米] 小米路由器 4A 千兆版 (MT7621)'
+          - 'glinet_mt3000: [GL.iNet] GL-MT3000 (Beryl AX 便攜旅行路由)'
+          - 'glinet_mt6000: [GL.iNet] GL-MT6000 (Flint 2 雙 2.5G 旗艦路由)'
+          - 'glinet_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2 雙網口網關)'
+          - 'glinet_axt1800: [GL.iNet] GL-AXT1800 (Slate AX 三頻旅行路由)'
+          - 'glinet_ax1800: [GL.iNet] GL-AX1800 (Flint 雙頻 Wi-Fi 6 路由)'
+          - 'asus_tuf_ax4200: [華碩 ASUS] asus_tuf-ax4200 (mediatek/filogic)'
+          - 'tplink_xdr6088: [TP-Link] TL-XDR6088 (雙 2.5G 旗艦 Wi-Fi 6)'
+          - 'qihoo_360t7: [360] qihoo_360t7 (mediatek/filogic)'
+          - 'jcg_q30pro: [捷稀] JCG Q30 Pro (MT7981 Wi-Fi 6)'
+          - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621 經典千兆神機)'
+          - 'asus_rt_ac3100: [華碩 ASUS] asus_rt-ac3100 (bcm53xx/generic)'
+          - 'asus_rt_ac56u: [華碩 ASUS] asus_rt-ac56u (bcm53xx/generic)'
+          - 'asus_rt_ac68u: [華碩 ASUS] asus_rt-ac68u (bcm53xx/generic)'
+          - 'asus_rt_ac87u: [華碩 ASUS] asus_rt-ac87u (bcm53xx/generic)'
+          - 'asus_rt_ac88u: [華碩 ASUS] asus_rt-ac88u (bcm53xx/generic)'
+          - 'asus_rt_n18u: [華碩 ASUS] asus_rt-n18u (bcm53xx/generic)'
+          - 'xiaomi_redmi_router_ax6s: [小米] xiaomi_redmi-router-ax6s (mediatek/mt7622)'
+          - 'asus_rt_ax59u: [華碩 ASUS] asus_rt-ax59u (mediatek/filogic)'
+          - 'asus_tuf_ax6000: [華碩 ASUS] asus_tuf-ax6000 (mediatek/filogic)'
+          - 'glinet_gl_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2 雙網口網關)'
+          - 'glinet_gl_mt3000: [GL.iNet] GL-MT3000 (Beryl AX 便攜旅行路由)'
+          - 'glinet_gl_mt6000: [GL.iNet] GL-MT6000 (Flint 2 雙 2.5G 旗艦路由)'
+          - 'glinet_gl_x3000: [GL.iNet] glinet_gl-x3000 (mediatek/filogic)'
+          - 'glinet_gl_xe3000: [GL.iNet] glinet_gl-xe3000 (mediatek/filogic)'
+          - 'xiaomi_mi_router_ax3000t: [小米] 小米路由器 AX3000T (高 CP 值 Wi-Fi 6)'
+          - 'xiaomi_mi_router_ax3000t_ubootmod: [小米] xiaomi_mi-router-ax3000t-ubootmod (mediatek/filogic)'
+          - 'xiaomi_mi_router_wr30u_stock: [小米] xiaomi_mi-router-wr30u-stock (mediatek/filogic)'
+          - 'xiaomi_mi_router_wr30u_ubootmod: [小米] xiaomi_mi-router-wr30u-ubootmod (mediatek/filogic)'
+          - 'xiaomi_redmi_router_ax6000_stock: [小米] xiaomi_redmi-router-ax6000-stock (mediatek/filogic)'
+          - 'xiaomi_redmi_router_ax6000_ubootmod: [小米] xiaomi_redmi-router-ax6000-ubootmod (mediatek/filogic)'
+          - 'asus_onhub: [華碩 ASUS] asus_onhub (ipq806x/chromium)'
+          - 'xiaomi_mi_router_hd: [小米] xiaomi_mi-router-hd (ipq806x/generic)'
+          - 'rpi_2: [樹莓派] rpi-2 (bcm27xx/bcm2709)'
+          - 'rpi: [樹莓派] rpi (bcm27xx/bcm2708)'
+          - 'friendlyarm_nanopc_t4: [友善 NanoPi] friendlyarm_nanopc-t4 (rockchip/armv8)'
+          - 'friendlyarm_nanopc_t6: [友善 NanoPi] friendlyarm_nanopc-t6 (rockchip/armv8)'
+          - 'friendlyarm_nanopi_r2c: [友善] NanoPi R2C (雙千兆軟路由)'
+          - 'friendlyarm_nanopi_r2c_plus: [友善 NanoPi] friendlyarm_nanopi-r2c-plus (rockchip/armv8)'
+          - 'friendlyarm_nanopi_r2s: [友善] NanoPi R2S (雙千兆經典軟路由)'
+          - 'friendlyarm_nanopi_r3s: [友善 NanoPi] friendlyarm_nanopi-r3s (rockchip/armv8)'
+          - 'friendlyarm_nanopi_r4s: [友善] NanoPi R4S (RK3399 高效軟路由)'
+          - 'friendlyarm_nanopi_r4s_enterprise: [友善 NanoPi] friendlyarm_nanopi-r4s-enterprise (rockchip/armv8)'
+          - 'friendlyarm_nanopi_r4se: [友善] NanoPi R4SE (內建 eMMC 高效軟路由)'
+          - 'friendlyarm_nanopi_r5c: [友善] NanoPi R5C (雙 2.5G 迷你軟路由)'
+          - 'friendlyarm_nanopi_r5s: [友善] NanoPi R5S (三網口 雙 2.5G 軟路由)'
+          - 'friendlyarm_nanopi_r6c: [友善] NanoPi R6C (RK3588 旗艦軟路由)'
+          - 'friendlyarm_nanopi_r6s: [友善] NanoPi R6S (RK3588 雙 2.5G 旗艦軟路由)'
+          - 'glinet_gl_mv1000: [GL.iNet] glinet_gl-mv1000 (mvebu/cortexa53)'
+          - 'asus_rt_ax89x: [Asus] asus_rt-ax89x (qualcommax/ipq807x)'
+          - 'redmi_ax6: [紅米] redmi_ax6 (qualcommax/ipq807x)'
+          - 'redmi_ax6_stock: [紅米] redmi_ax6-stock (qualcommax/ipq807x)'
+          - 'xiaomi_ax3600: [小米] xiaomi_ax3600 (qualcommax/ipq807x)'
+          - 'xiaomi_ax3600_stock: [小米] xiaomi_ax3600-stock (qualcommax/ipq807x)'
+          - 'xiaomi_ax9000: [小米] xiaomi_ax9000 (qualcommax/ipq807x)'
+          - 'asus_rp_n53: [華碩 ASUS] asus_rp-n53 (ramips/mt7620)'
+          - 'asus_rt_ac51u: [華碩 ASUS] asus_rt-ac51u (ramips/mt7620)'
+          - 'asus_rt_ac54u: [華碩 ASUS] asus_rt-ac54u (ramips/mt7620)'
+          - 'asus_rt_n14u: [華碩 ASUS] asus_rt-n14u (ramips/mt7620)'
+          - 'glinet_gl_mt300a: [GL.iNet] glinet_gl-mt300a (ramips/mt7620)'
+          - 'glinet_gl_mt300n: [GL.iNet] glinet_gl-mt300n (ramips/mt7620)'
+          - 'glinet_gl_mt750: [GL.iNet] glinet_gl-mt750 (ramips/mt7620)'
+          - 'xiaomi_miwifi_mini: [小米] xiaomi_miwifi-mini (ramips/mt7620)'
+          - 'asus_rt_ac1200: [華碩 ASUS] asus_rt-ac1200 (ramips/mt76x8)'
+          - 'asus_rt_ac1200_v2: [華碩 ASUS] asus_rt-ac1200-v2 (ramips/mt76x8)'
+          - 'asus_rt_n12_vp_b1: [華碩 ASUS] asus_rt-n12-vp-b1 (ramips/mt76x8)'
+          - 'glinet_gl_mt300n_v2: [GL.iNet] glinet_gl-mt300n-v2 (ramips/mt76x8)'
+          - 'glinet_microuter_n300: [GL.iNet] glinet_microuter-n300 (ramips/mt76x8)'
+          - 'glinet_vixmini: [GL.iNet] glinet_vixmini (ramips/mt76x8)'
+          - 'xiaomi_mi_ra75: [小米] xiaomi_mi-ra75 (ramips/mt76x8)'
+          - 'xiaomi_mi_router_4a_100m: [小米] xiaomi_mi-router-4a-100m (ramips/mt76x8)'
+          - 'xiaomi_mi_router_4a_100m_intl: [小米] xiaomi_mi-router-4a-100m-intl (ramips/mt76x8)'
+          - 'xiaomi_mi_router_4a_100m_intl_v2: [小米] xiaomi_mi-router-4a-100m-intl-v2 (ramips/mt76x8)'
+          - 'xiaomi_mi_router_4c: [小米] xiaomi_mi-router-4c (ramips/mt76x8)'
+          - 'xiaomi_miwifi_3c: [小米] xiaomi_miwifi-3c (ramips/mt76x8)'
+          - 'xiaomi_miwifi_nano: [小米] xiaomi_miwifi-nano (ramips/mt76x8)'
+          - 'asus_rp_ac56: [華碩 ASUS] asus_rp-ac56 (ramips/mt7621)'
+          - 'asus_rp_ac87: [華碩 ASUS] asus_rp-ac87 (ramips/mt7621)'
+          - 'asus_rt_ac57u_v1: [華碩 ASUS] asus_rt-ac57u-v1 (ramips/mt7621)'
+          - 'asus_rt_ac65p: [華碩 ASUS] asus_rt-ac65p (ramips/mt7621)'
+          - 'asus_rt_ac85p: [華碩 ASUS] asus_rt-ac85p (ramips/mt7621)'
+          - 'asus_rt_ax53u: [華碩 ASUS] asus_rt-ax53u (ramips/mt7621)'
+          - 'asus_rt_ax54: [華碩 ASUS] asus_rt-ax54 (ramips/mt7621)'
+          - 'asus_rt_n56u_b1: [華碩 ASUS] asus_rt-n56u-b1 (ramips/mt7621)'
+          - 'glinet_gl_mt1300: [GL.iNet] glinet_gl-mt1300 (ramips/mt7621)'
+          - 'xiaomi_mi_router_3_pro: [小米] xiaomi_mi-router-3-pro (ramips/mt7621)'
+          - 'xiaomi_mi_router_3g: [小米] xiaomi_mi-router-3g (ramips/mt7621)'
+          - 'xiaomi_mi_router_3g_v2: [小米] xiaomi_mi-router-3g-v2 (ramips/mt7621)'
+          - 'xiaomi_mi_router_4: [小米] xiaomi_mi-router-4 (ramips/mt7621)'
+          - 'xiaomi_mi_router_4a_gigabit: [小米] 小米路由器 4A 千兆版 (MT7621)'
+          - 'xiaomi_mi_router_4a_gigabit_v2: [小米] xiaomi_mi-router-4a-gigabit-v2 (ramips/mt7621)'
+          - 'xiaomi_mi_router_ac2100: [小米] xiaomi_mi-router-ac2100 (ramips/mt7621)'
+          - 'xiaomi_mi_router_cr6606: [小米] xiaomi_mi-router-cr6606 (ramips/mt7621)'
+          - 'xiaomi_mi_router_cr6608: [小米] xiaomi_mi-router-cr6608 (ramips/mt7621)'
+          - 'xiaomi_mi_router_cr6609: [小米] xiaomi_mi-router-cr6609 (ramips/mt7621)'
+          - 'xiaomi_redmi_router_ac2100: [小米] xiaomi_redmi-router-ac2100 (ramips/mt7621)'
+          - 'asus_map_ac2200: [華碩 ASUS] asus_map-ac2200 (ipq40xx/generic)'
+          - 'asus_rt_ac42u: [華碩 ASUS] asus_rt-ac42u (ipq40xx/generic)'
+          - 'asus_rt_ac58u: [華碩 ASUS] asus_rt-ac58u (ipq40xx/generic)'
+          - 'glinet_gl_a1300: [GL.iNet] glinet_gl-a1300 (ipq40xx/generic)'
+          - 'glinet_gl_ap1300: [GL.iNet] glinet_gl-ap1300 (ipq40xx/generic)'
+          - 'glinet_gl_b1300: [GL.iNet] glinet_gl-b1300 (ipq40xx/generic)'
+          - 'glinet_gl_b2200: [GL.iNet] glinet_gl-b2200 (ipq40xx/generic)'
+          - 'friendlyarm_nanopi_neo_plus2: [友善 NanoPi] friendlyarm_nanopi-neo-plus2 (sunxi/cortexa53)'
+          - 'friendlyarm_nanopi_neo2: [友善 NanoPi] friendlyarm_nanopi-neo2 (sunxi/cortexa53)'
+          - 'friendlyarm_nanopi_r1s_h5: [友善 NanoPi] friendlyarm_nanopi-r1s-h5 (sunxi/cortexa53)'
+          - 'friendlyarm_nanopi_m1_plus: [友善 NanoPi] friendlyarm_nanopi-m1-plus (sunxi/cortexa7)'
+          - 'friendlyarm_nanopi_neo: [友善 NanoPi] friendlyarm_nanopi-neo (sunxi/cortexa7)'
+          - 'friendlyarm_nanopi_neo_air: [友善 NanoPi] friendlyarm_nanopi-neo-air (sunxi/cortexa7)'
+          - 'friendlyarm_nanopi_r1: [友善 NanoPi] friendlyarm_nanopi-r1 (sunxi/cortexa7)'
+          - 'friendlyarm_zeropi: [友善 NanoPi] friendlyarm_zeropi (sunxi/cortexa7)'
+          - 'glinet_gl_ar300m_nand: [GL.iNet] glinet_gl-ar300m-nand (ath79/nand)'
+          - 'glinet_gl_ar300m_nor: [GL.iNet] glinet_gl-ar300m-nor (ath79/nand)'
+          - 'glinet_gl_ar750s_nor: [GL.iNet] glinet_gl-ar750s-nor (ath79/nand)'
+          - 'glinet_gl_ar750s_nor_nand: [GL.iNet] glinet_gl-ar750s-nor-nand (ath79/nand)'
+          - 'glinet_gl_e750: [GL.iNet] glinet_gl-e750 (ath79/nand)'
+          - 'glinet_gl_s200_nor: [GL.iNet] glinet_gl-s200-nor (ath79/nand)'
+          - 'glinet_gl_s200_nor_nand: [GL.iNet] glinet_gl-s200-nor-nand (ath79/nand)'
+          - 'glinet_gl_x1200_nor: [GL.iNet] glinet_gl-x1200-nor (ath79/nand)'
+          - 'glinet_gl_x1200_nor_nand: [GL.iNet] glinet_gl-x1200-nor-nand (ath79/nand)'
+          - 'glinet_gl_xe300: [GL.iNet] glinet_gl-xe300 (ath79/nand)'
+          - 'asus_pl_ac56: [華碩 ASUS] asus_pl-ac56 (ath79/generic)'
+          - 'asus_rp_ac51: [華碩 ASUS] asus_rp-ac51 (ath79/generic)'
+          - 'asus_rp_ac66: [華碩 ASUS] asus_rp-ac66 (ath79/generic)'
+          - 'asus_rt_ac59u: [華碩 ASUS] asus_rt-ac59u (ath79/generic)'
+          - 'asus_rt_ac59u_v2: [華碩 ASUS] asus_rt-ac59u-v2 (ath79/generic)'
+          - 'asus_zenwifi_cd6n: [華碩 ASUS] asus_zenwifi-cd6n (ath79/generic)'
+          - 'asus_zenwifi_cd6r: [華碩 ASUS] asus_zenwifi-cd6r (ath79/generic)'
+          - 'glinet_6408: [GL.iNet] glinet_6408 (ath79/generic)'
+          - 'glinet_6416: [GL.iNet] glinet_6416 (ath79/generic)'
+          - 'glinet_gl_ar150: [GL.iNet] glinet_gl-ar150 (ath79/generic)'
+          - 'glinet_gl_ar300m_lite: [GL.iNet] glinet_gl-ar300m-lite (ath79/generic)'
+          - 'glinet_gl_ar300m16: [GL.iNet] glinet_gl-ar300m16 (ath79/generic)'
+          - 'glinet_gl_ar750: [GL.iNet] glinet_gl-ar750 (ath79/generic)'
+          - 'glinet_gl_mifi: [GL.iNET] glinet_gl-mifi (ath79/generic)'
+          - 'glinet_gl_usb150: [GL.iNET] glinet_gl-usb150 (ath79/generic)'
+          - 'glinet_gl_x300b: [GL.iNet] glinet_gl-x300b (ath79/generic)'
+          - 'glinet_gl_x750: [GL.iNet] glinet_gl-x750 (ath79/generic)'
+          - 'qihoo_c301: [360] qihoo_c301 (ath79/generic)'
+          - 'xiaomi_aiot_ac2350: [小米] xiaomi_aiot-ac2350 (ath79/generic)'
+          - 'xiaomi_mi_router_4q: [小米] xiaomi_mi-router-4q (ath79/generic)'
+          - 'asus_rt_ac53u: [華碩 ASUS] asus_rt-ac53u (bcm47xx/mips74k)'
+          - 'asus_rt_n14uhp: [華碩 ASUS] asus_rt-n14uhp (bcm47xx/mips74k)'
+          - 'asus_rt_n15u: [華碩 ASUS] asus_rt-n15u (bcm47xx/mips74k)'
+          - 'asus_rt_n16: [華碩 ASUS] asus_rt-n16 (bcm47xx/mips74k)'
+          - 'asus_rt_n66u: [華碩 ASUS] asus_rt-n66u (bcm47xx/mips74k)'
+          - 'asus_rt_n66w: [華碩 ASUS] asus_rt-n66w (bcm47xx/mips74k)'
+          - 'asus_gt_ac5300: [華碩 ASUS] asus_gt-ac5300 (bcm4908/generic)'
+          - 'asus_rt_n56u: [華碩 ASUS] asus_rt-n56u (ramips/rt3883)'
           # --- AUTO_DEVICES_END ---
 
       is_bypass_router:
