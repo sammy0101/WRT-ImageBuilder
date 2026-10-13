@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Tue Oct 13 15:42:15 UTC 2026
+Generated on: Tue Oct 13 15:42:44 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -9,9 +9,9 @@ Generated on: Tue Oct 13 15:42:15 UTC 2026
 # ==============================================================================
 
 LOG_FILE="/tmp/uci-defaults-init.log"
-echo "=== 開始執行首航網路配置 $(date) ===" > "$LOG_FILE"
+echo "=== 開始執行首航配置 $(date) ===" > "$LOG_FILE"
 
-# 1. 讀取自訂網路參數設定檔
+# 1. 讀取自訂網路與系統設定
 NET_CONF="/etc/custom_network_config"
 if [ -f "$NET_CONF" ]; then
     . "$NET_CONF"
@@ -21,8 +21,42 @@ TARGET_LAN_IP="${CUSTOM_LAN_IP:-192.168.100.1}"
 IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
 GATEWAY="${GATEWAY_IP:-192.168.100.2}"
 DNS_LIST="${DNS_SERVERS:-192.168.100.2 8.8.8.8}"
+USE_OFFICIAL="${USE_OFFICIAL_REPO:-true}"
+FW_SYS="${FW_SYSTEM_TYPE:-ImmortalWrt}"
 
-# 2. 網路配置 (旁路由 vs 主路由模式)
+# 2. 【核心功能】首次開機強制將軟體源替換為官方源
+if [ "$USE_OFFICIAL" = "true" ]; then
+    echo "正在執行首次開機軟體源官方化..." >> "$LOG_FILE"
+    
+    # 決定官方網域名稱
+    if [ "${FW_SYS}" = "OpenWrt" ]; then
+        TARGET_DOMAIN="downloads.openwrt.org"
+    else
+        TARGET_DOMAIN="downloads.immortalwrt.org"
+    fi
+
+    # 清洗 25.12+ (apk) 軟體源
+    for f in /etc/apk/repositories.d/*.list /etc/apk/repositories; do
+        [ -f "$f" ] || continue
+        sed -i 's|mirrors.vsean.net/openwrt|'"$TARGET_DOMAIN"'|g' "$f"
+        sed -i 's|https://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$f"
+        sed -i 's|http://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$f"
+        sed -i 's|https://.*/snapshots/|https://'"$TARGET_DOMAIN"'/snapshots/|g' "$f"
+        sed -i 's|http://.*/snapshots/|https://'"$TARGET_DOMAIN"'/snapshots/|g' "$f"
+    done
+
+    # 清洗 23.05 / 24.10 (opkg) 軟體源
+    if [ -d "/etc/opkg" ]; then
+        find /etc/opkg/ -type f \( -name "*.conf" -o -name "distfeeds.conf" \) 2>/dev/null | while read -r conf_file; do
+            sed -i 's|mirrors.vsean.net/openwrt|'"$TARGET_DOMAIN"'|g' "$conf_file"
+            sed -i 's|https://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$conf_file"
+            sed -i 's|http://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$conf_file"
+        done
+    fi
+    echo "✓ 軟體源已強制切換為官方 $TARGET_DOMAIN" >> "$LOG_FILE"
+fi
+
+# 3. 網路配置 (旁路由 vs 主路由模式)
 if [ "$IS_BYPASS" = "true" ]; then
     echo "套用【旁路由模式】: IP=$TARGET_LAN_IP, GW=$GATEWAY" >> "$LOG_FILE"
 
@@ -59,7 +93,7 @@ else
     uci set dhcp.lan.ignore='0'
 fi
 
-# 3. 防火牆允許入站訪問
+# 4. 防火牆允許入站訪問
 uci set firewall.@zone[0].input='ACCEPT'
 uci set firewall.@zone[1].input='ACCEPT' 2>/dev/null || true
 
