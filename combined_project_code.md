@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Tue Oct 13 15:49:20 UTC 2026
+Generated on: Tue Oct 13 15:50:14 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -499,7 +499,7 @@ FW_VER="${VERSION:-25.12.5}"
 SELECTED_DEVICE="${DEVICE_MODEL:-x86_generic}"
 SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
-USE_OFFICIAL="${USE_OFFICIAL_REPO:-true}"
+USE_OFFICIAL="${USE_OFFICIAL_REPO:-false}"
 IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
 TARGET_IP="${LAN_IP:-192.168.100.1}"
 GW_IP="${GATEWAY_IP:-192.168.100.2}"
