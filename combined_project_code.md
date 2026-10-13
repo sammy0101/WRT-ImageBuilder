@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Tue Oct 13 15:41:44 UTC 2026
+Generated on: Tue Oct 13 15:42:15 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -454,7 +454,7 @@ fi
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 旁路由引導模式 + 官方原裝英文 + VMware .vmdk
+# 支援 官方軟體源強制切換 + 旁路由引導模式 + 官方原裝英文 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -465,6 +465,7 @@ FW_VER="${VERSION:-25.12.5}"
 SELECTED_DEVICE="${DEVICE_MODEL:-x86_generic}"
 SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
+USE_OFFICIAL="${USE_OFFICIAL_REPO:-true}"
 IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
 TARGET_IP="${LAN_IP:-192.168.100.1}"
 GW_IP="${GATEWAY_IP:-192.168.100.2}"
@@ -496,6 +497,7 @@ echo "  系統版本: $FW_VER"
 echo "  所選設備: $DEVICE_KEY"
 echo "  目標架構 (Target): $TARGET_INPUT"
 echo "  設備代號 (Profile): $PROFILE_NAME"
+echo "  強制官方源: $([ "$USE_OFFICIAL" = "true" ] && echo "啟用 (downloads 官方源)" || echo "停用 (維持預設)")"
 echo "  網路模式: $([ "$IS_BYPASS" = "true" ] && echo "🛡️ 旁路由模式" || echo "🌐 主路由模式")"
 echo "  本機 LAN IP: $TARGET_IP"
 if [ "$IS_BYPASS" = "true" ]; then
@@ -540,7 +542,21 @@ tar -xf "$WORKDIR/$ARCHIVE_NAME" -C "$WORKDIR"
 EXTRACTED_DIR=$(find "$WORKDIR" -maxdepth 1 -type d -name "*imagebuilder*" | head -n 1)
 cd "$EXTRACTED_DIR"
 
-# 4. 讀取並整合軟體包清單
+# 4. 【編譯期清洗】若啟用官方源，直接替換 ImageBuilder 本地的 repositories.conf
+if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
+  echo "正在將 ImageBuilder 編譯環境替換為官方源..."
+  if [[ "${FW_TYPE,,}" == "immortalwrt" ]]; then
+    sed -i 's|mirrors.vsean.net/openwrt|downloads.immortalwrt.org|g' repositories.conf
+    sed -i 's|https://.*/releases/|https://downloads.immortalwrt.org/releases/|g' repositories.conf
+    sed -i 's|http://.*/releases/|https://downloads.immortalwrt.org/releases/|g' repositories.conf
+  else
+    sed -i 's|https://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
+    sed -i 's|http://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
+  fi
+  echo "✓ ImageBuilder repositories.conf 已清洗為官方原廠源"
+fi
+
+# 5. 讀取並整合軟體包清單
 source "$ROOT_DIR/shell/custom-packages.sh"
 PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
 
@@ -555,7 +571,7 @@ if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
 fi
 
-# 5. 整合 Overlay 檔案 (files 系統覆蓋層)
+# 6. 整合 Overlay 檔案 (files 系統覆蓋層)
 mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$ROOT_DIR/files/"* files/
 
@@ -564,6 +580,8 @@ CUSTOM_LAN_IP="$TARGET_IP"
 IS_BYPASS_ROUTER="$IS_BYPASS"
 GATEWAY_IP="$GW_IP"
 DNS_SERVERS="$DNS_IPS"
+USE_OFFICIAL_REPO="$USE_OFFICIAL"
+FW_SYSTEM_TYPE="$FW_TYPE"
 EOF
 
 if [[ "$PPPOE_EN" == "true" ]]; then
@@ -574,7 +592,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 第三方套件處理 (Argon 主題)
+# 7. 第三方套件處理 (Argon 主題)
 mkdir -p packages
 
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
@@ -594,7 +612,7 @@ fi
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
 
-# 7. 打包構建
+# 8. 打包構建
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -651,7 +669,7 @@ execute_make_image() {
 
 execute_make_image "$PACKAGES_TO_BUILD"
 
-# 8. 自動轉換 VMware .vmdk 虛擬磁碟格式
+# 9. 自動轉換 VMware .vmdk 虛擬磁碟格式
 if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
   echo "正在生成 VMware .vmdk 虛擬磁碟..."
   for img_gz in "$OUTPUT_DIR"/*combined*.img.gz; do
