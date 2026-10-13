@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Tue Oct 13 15:42:44 UTC 2026
+Generated on: Tue Oct 13 15:49:20 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -822,7 +822,7 @@ on:
           - 'OpenWrt'
 
       luci_version:
-        description: '韌體版本 (預設 auto 自動抓取最新正式版；亦可自訂輸入如: 25.12.2, 24.10.0)'
+        description: '韌體版本 (預設 auto 自動抓取最新正式版；亦可手動輸入如: 25.12.2, 24.10.0)'
         required: true
         default: 'auto'
         type: string
@@ -871,10 +871,10 @@ on:
           # --- AUTO_DEVICES_END ---
 
       use_official_repo:
-        description: '【軟體源】是否強制改為官方原廠源 (預設開啟：自動將 vsean 等鏡像替換為官方 downloads 源)'
+        description: '【軟體源】是否改為官方原廠源 (預設關閉；勾選開啟：自動將預設鏡像替換為官方 downloads 源)'
         required: false
         type: boolean
-        default: true
+        default: false
 
       is_bypass_router:
         description: '【旁路由開關】是否作為旁路由 / 二級網關模式 (預設不開啟；勾選為開啟)'
@@ -1003,7 +1003,7 @@ jobs:
           echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **設備型號**: ${{ inputs.device_model }}" >> $GITHUB_STEP_SUMMARY
           echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
-          echo "- **軟體源配置**: ${{ inputs.use_official_repo && '官方原廠源 (downloads.immortalwrt.org)' || '系統預設鏡像源' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **軟體源配置**: ${{ inputs.use_official_repo && '官方原廠源 (downloads 伺服器)' || '系統預設鏡像源' }}" >> $GITHUB_STEP_SUMMARY
           if [ "${{ inputs.is_bypass_router }}" = "true" ]; then
             echo "- **網路模式**: 🛡️ 旁路由 / 網關模式 (已關閉 DHCP，啟用 NAT 偽裝)" >> $GITHUB_STEP_SUMMARY
             echo "- **本機 LAN IP**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
@@ -1053,7 +1053,7 @@ jobs:
             - **系統版本**: ${{ steps.resolve_version.outputs.version }}
             - **硬體設備**: ${{ inputs.device_model }}
             - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
-            - **軟體源配置**: ${{ inputs.use_official_repo && '官方原廠源 (downloads.immortalwrt.org)' || '預設鏡像源' }}
+            - **軟體源配置**: ${{ inputs.use_official_repo && '官方原廠源 (downloads 伺服器)' || '系統預設鏡像源' }}
             - **網路模式**: ${{ inputs.is_bypass_router && '🛡️ 旁路由模式 (DHCP已關閉，NAT偽裝已開啟)' || '🌐 主路由模式' }}
             - **管理網址 (LAN IP)**: `http://${{ inputs.lan_ip }}`
             - **主路由網關 (Gateway)**: `${{ inputs.gateway_ip }}`
