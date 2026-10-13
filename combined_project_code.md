@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Tue Oct 13 15:50:14 UTC 2026
+Generated on: Tue Oct 13 15:50:54 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -21,7 +21,7 @@ TARGET_LAN_IP="${CUSTOM_LAN_IP:-192.168.100.1}"
 IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
 GATEWAY="${GATEWAY_IP:-192.168.100.2}"
 DNS_LIST="${DNS_SERVERS:-192.168.100.2 8.8.8.8}"
-USE_OFFICIAL="${USE_OFFICIAL_REPO:-true}"
+USE_OFFICIAL="${USE_OFFICIAL_REPO:-false}"
 FW_SYS="${FW_SYSTEM_TYPE:-ImmortalWrt}"
 
 # 2. 【核心功能】首次開機強制將軟體源替換為官方源
