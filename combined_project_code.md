@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Tue Oct 27 10:31:33 UTC 2026
+Generated on: Tue Oct 27 10:32:00 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -23,19 +23,18 @@ GATEWAY="${GATEWAY_IP:-192.168.100.2}"
 DNS_LIST="${DNS_SERVERS:-192.168.100.2 8.8.8.8}"
 USE_OFFICIAL="${USE_OFFICIAL_REPO:-false}"
 FW_SYS="${FW_SYSTEM_TYPE:-ImmortalWrt}"
+ENABLE_QUICKSTART="${ENABLE_ISTOREOS_HOME:-false}"
 
-# 2. 【核心功能】首次開機強制將軟體源替換為官方源
+# 2. 首次開機強制將軟體源替換為官方源 (若開啟)
 if [ "$USE_OFFICIAL" = "true" ]; then
     echo "正在執行首次開機軟體源官方化..." >> "$LOG_FILE"
     
-    # 決定官方網域名稱
     if [ "${FW_SYS}" = "OpenWrt" ]; then
         TARGET_DOMAIN="downloads.openwrt.org"
     else
         TARGET_DOMAIN="downloads.immortalwrt.org"
     fi
 
-    # 清洗 25.12+ (apk) 軟體源
     for f in /etc/apk/repositories.d/*.list /etc/apk/repositories; do
         [ -f "$f" ] || continue
         sed -i 's|mirrors.vsean.net/openwrt|'"$TARGET_DOMAIN"'|g' "$f"
@@ -45,7 +44,6 @@ if [ "$USE_OFFICIAL" = "true" ]; then
         sed -i 's|http://.*/snapshots/|https://'"$TARGET_DOMAIN"'/snapshots/|g' "$f"
     done
 
-    # 清洗 23.05 / 24.10 (opkg) 軟體源
     if [ -d "/etc/opkg" ]; then
         find /etc/opkg/ -type f \( -name "*.conf" -o -name "distfeeds.conf" \) 2>/dev/null | while read -r conf_file; do
             sed -i 's|mirrors.vsean.net/openwrt|'"$TARGET_DOMAIN"'|g' "$conf_file"
@@ -53,7 +51,6 @@ if [ "$USE_OFFICIAL" = "true" ]; then
             sed -i 's|http://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$conf_file"
         done
     fi
-    echo "✓ 軟體源已強制切換為官方 $TARGET_DOMAIN" >> "$LOG_FILE"
 fi
 
 # 3. 網路配置 (旁路由 vs 主路由模式)
@@ -97,9 +94,17 @@ fi
 uci set firewall.@zone[0].input='ACCEPT'
 uci set firewall.@zone[1].input='ACCEPT' 2>/dev/null || true
 
+# 5. 【iStoreOS 首頁風格跳轉】若啟用了 QuickStart，開機將其設為預設著陸頁面
+if [ "$ENABLE_QUICKSTART" = "true" ] || [ -f "/usr/share/luci/menu.d/luci-app-quickstart.json" ]; then
+    echo "正在設定 LuCI 預設首頁為 QuickStart (iStoreOS 風格)..." >> "$LOG_FILE"
+    uci set luci.main.default_node="admin/quickstart" 2>/dev/null || true
+    rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/ 2>/dev/null || true
+fi
+
 uci commit network
 uci commit dhcp
 uci commit firewall
+uci commit luci 2>/dev/null || true
 
 echo "=== 首航配置完成 ===" >> "$LOG_FILE"
 exit 0
