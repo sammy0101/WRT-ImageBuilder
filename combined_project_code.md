@@ -1,197 +1,108 @@
 # Complete Project Codebase
-Generated on: Tue Oct 27 10:18:53 UTC 2026
+Generated on: Tue Oct 27 10:30:57 UTC 2026
 
-## File: shell/fetch-versions.sh
+## File: files/etc/uci-defaults/99-custom.sh
 ````sh
-#!/usr/bin/env bash
+#!/bin/sh
 # ==============================================================================
-# 腳本名稱: fetch-versions.sh
-# 功能描述: 自動讀取官方 OpenWrt 或 ImmortalWrt 的版本清單與最新正式發布版本
+# 首航初始化腳本：開機首次啟動自動執行一次後自我銷毀
 # ==============================================================================
-set -euo pipefail
 
-TARGET_TYPE="${1:-ImmortalWrt}"
-ACTION="${2:-list}" # 支援 list 或 latest
+LOG_FILE="/tmp/uci-defaults-init.log"
+echo "=== 開始執行首航配置 $(date) ===" > "$LOG_FILE"
 
-case "${TARGET_TYPE,,}" in
-  openwrt)
-    REPO_URL="https://github.com/openwrt/openwrt.git"
-    ;;
-  immortalwrt)
-    REPO_URL="https://github.com/immortalwrt/immortalwrt.git"
-    ;;
-  *)
-    echo "錯誤: 未知的韌體類型 '$TARGET_TYPE'，請指定 openwrt 或 immortalwrt。" >&2
-    exit 1
-    ;;
-esac
-
-# 透過 git ls-remote 即時查詢遠端 tags，免除 GitHub API 訪問頻率限制
-RAW_TAGS=$(git ls-remote --tags --refs "$REPO_URL" "v[0-9]*" 2>/dev/null \
-  | awk -F'/' '{print $3}' \
-  | sed 's/^v//' \
-  | grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?$' \
-  | sort -V -r | uniq)
-
-# 當網路異常時的安全降級預設版本列表
-if [ -z "$RAW_TAGS" ]; then
-  if [[ "${TARGET_TYPE,,}" == "openwrt" ]]; then
-    RAW_TAGS=$(printf "24.10.0\n23.05.5\n23.05.4\n23.05.3\n23.05.2")
-  else
-    RAW_TAGS=$(printf "24.10.0\n23.05.4\n23.05.3\n23.05.2\n21.02.7")
-  fi
+# 1. 讀取自訂網路與系統設定
+NET_CONF="/etc/custom_network_config"
+if [ -f "$NET_CONF" ]; then
+    . "$NET_CONF"
 fi
 
-if [ "$ACTION" = "latest" ]; then
-  echo "$RAW_TAGS" | head -n 1
+TARGET_LAN_IP="${CUSTOM_LAN_IP:-192.168.100.1}"
+IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
+GATEWAY="${GATEWAY_IP:-192.168.100.2}"
+DNS_LIST="${DNS_SERVERS:-192.168.100.2 8.8.8.8}"
+USE_OFFICIAL="${USE_OFFICIAL_REPO:-false}"
+FW_SYS="${FW_SYSTEM_TYPE:-ImmortalWrt}"
+
+# 2. 【核心功能】首次開機強制將軟體源替換為官方源
+if [ "$USE_OFFICIAL" = "true" ]; then
+    echo "正在執行首次開機軟體源官方化..." >> "$LOG_FILE"
+    
+    # 決定官方網域名稱
+    if [ "${FW_SYS}" = "OpenWrt" ]; then
+        TARGET_DOMAIN="downloads.openwrt.org"
+    else
+        TARGET_DOMAIN="downloads.immortalwrt.org"
+    fi
+
+    # 清洗 25.12+ (apk) 軟體源
+    for f in /etc/apk/repositories.d/*.list /etc/apk/repositories; do
+        [ -f "$f" ] || continue
+        sed -i 's|mirrors.vsean.net/openwrt|'"$TARGET_DOMAIN"'|g' "$f"
+        sed -i 's|https://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$f"
+        sed -i 's|http://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$f"
+        sed -i 's|https://.*/snapshots/|https://'"$TARGET_DOMAIN"'/snapshots/|g' "$f"
+        sed -i 's|http://.*/snapshots/|https://'"$TARGET_DOMAIN"'/snapshots/|g' "$f"
+    done
+
+    # 清洗 23.05 / 24.10 (opkg) 軟體源
+    if [ -d "/etc/opkg" ]; then
+        find /etc/opkg/ -type f \( -name "*.conf" -o -name "distfeeds.conf" \) 2>/dev/null | while read -r conf_file; do
+            sed -i 's|mirrors.vsean.net/openwrt|'"$TARGET_DOMAIN"'|g' "$conf_file"
+            sed -i 's|https://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$conf_file"
+            sed -i 's|http://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$conf_file"
+        done
+    fi
+    echo "✓ 軟體源已強制切換為官方 $TARGET_DOMAIN" >> "$LOG_FILE"
+fi
+
+# 3. 網路配置 (旁路由 vs 主路由模式)
+if [ "$IS_BYPASS" = "true" ]; then
+    echo "套用【旁路由模式】: IP=$TARGET_LAN_IP, GW=$GATEWAY" >> "$LOG_FILE"
+
+    uci set network.lan.proto='static'
+    uci set network.lan.ipaddr="$TARGET_LAN_IP"
+    uci set network.lan.netmask='255.255.255.0'
+    uci set network.lan.gateway="$GATEWAY"
+    
+    uci -q delete network.lan.dns
+    for dns_ip in $DNS_LIST; do
+        uci add_list network.lan.dns="$dns_ip"
+    done
+
+    # 關閉旁路由 DHCP 伺服器
+    uci set dhcp.lan.ignore='1'
+    uci -q delete dhcp.lan.dhcpv6
+    uci -q delete dhcp.lan.ra
+    uci -q delete dhcp.lan.ra_slaac
+    uci -q delete dhcp.lan.ra_flags
+
+    # 開啟 LAN 防火牆動態偽裝 (NAT Masquerade)
+    uci set firewall.@zone[0].masq='1'
+    uci set firewall.@zone[0].mtu_fix='1'
+
+    uci set network.wan.disabled='1' 2>/dev/null || true
+    uci set network.wan6.disabled='1' 2>/dev/null || true
 else
-  echo "$RAW_TAGS"
+    echo "套用【標準主路由模式】: LAN IP=$TARGET_LAN_IP" >> "$LOG_FILE"
+    uci set network.lan.proto='static'
+    uci set network.lan.ipaddr="$TARGET_LAN_IP"
+    uci set network.lan.netmask='255.255.255.0'
+    uci -q delete network.lan.gateway
+    uci -q delete network.lan.dns
+    uci set dhcp.lan.ignore='0'
 fi
 
-````
+# 4. 防火牆允許入站訪問
+uci set firewall.@zone[0].input='ACCEPT'
+uci set firewall.@zone[1].input='ACCEPT' 2>/dev/null || true
 
-## File: shell/custom-packages.sh
-````sh
-#!/usr/bin/env bash
-# ==============================================================================
-# 自訂擴充軟體包選單 (極簡原生英文版，分類齊全)
-#
-# 【使用說明】:
-# 預設僅啟用 LuCI Web 介面與 Argon 主題。
-# 若需要安裝某個外掛，只需刪除該行最前面的「#」號解除註解即可。
-# （Docker 請直接在 GitHub Actions 頁面勾選，此處無需設定）
-# ==============================================================================
+uci commit network
+uci commit dhcp
+uci commit firewall
 
-CUSTOM_PACKAGES=""
-
-# ==============================================================================
-# 0. 核心基礎套件 (預設啟用)
-# ==============================================================================
-# 核心 Web 網頁介面 (原生英文)
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci"
-
-# Argon 現代自適應主題 (若想用官方原生 Bootstrap 主題，可在該行開頭加 #)
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
-
-# ==============================================================================
-# 1. 代理客戶端與科學上網 (Proxy Clients)
-# ==============================================================================
-# OpenClash (基於 Clash.Meta / Mihomo 內核的進階代理工具)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-openclash"
-
-# PassWall (經典穩定的代理工具，支援 Trojan/VLESS/Hysteria2/TUIC/SS)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-passwall"
-
-# HomeProxy (ImmortalWrt 官方主推，基於 sing-box 的高效能透明代理)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-homeproxy"
-
-# Mihomo (新一代輕量化 Clash.Meta 原生 LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mihomo"
-
-# ShadowSocksR Plus+ (SSR-Plus 老牌代理工具)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ssr-plus"
-
-# v2rayA (基於 Xray/V2Ray 核心的多協議網頁版客戶端)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-v2raya"
-
-# ==============================================================================
-# 2. DNS 防污染、解析加速與廣告過濾 (DNS & AdBlock)
-# ==============================================================================
-# SmartDNS (本機防污染 DNS 伺服器，支援測速、分流與快取優化)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-smartdns"
-
-# MosDNS (現代化模組化 DNS 分流工具，常與各類代理搭配)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mosdns"
-
-# AdGuard Home (全網絡廣告與隱私追蹤攔截 DNS 伺服器)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-adguardhome"
-
-# Adblock (官方輕量原生廣告過濾外掛)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-adblock"
-
-# ==============================================================================
-# 3. 異地組網、內網穿透與虛擬私有網路 (VPN & Network Tunnel)
-# ==============================================================================
-# Tailscale (跨平台 WireGuard 零設定異地互聯)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES tailscale iptables-nft"
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-tailscale"
-
-# ZeroTier (虛擬區域網路 P2P 穿透互聯)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-zerotier"
-
-# WireGuard (現代輕量高效能 VPN 通道)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-wireguard"
-
-# FRP Client (內網穿透客戶端，將內網服務映射至公網伺服器)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-frpc"
-
-# ==============================================================================
-# 4. 常用網路功能、喚醒與動態域名 (Network Utilities)
-# ==============================================================================
-# UPnP 自動通訊埠對應 (BT/PT 下載與遊戲聯網必備)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-upnp"
-
-# WOL 網路喚醒 (遠端喚醒區域網路內的電腦/NAS/伺服器)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-wol"
-
-# DDNS 動態域名解析 (搭配 Cloudflare/Aliyun 解析浮動公網 IP)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ddns"
-
-# Socat 通訊埠轉發工具 (支援 IPv4/IPv6 雙向轉發)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-socat"
-
-# MWAN3 (多 WAN 線路接入、多撥與負載均衡)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mwan3"
-
-# SQM 流量控制 (智慧隊列管理，徹底解決 Bufferbloat 高延遲問題)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-sqm"
-
-# ==============================================================================
-# 5. 系統監控、頻寬統計與自動維護 (System & Monitoring)
-# ==============================================================================
-# ttyd (直接在網頁後台開啟 Linux 終端機)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ttyd"
-
-# 定時自動重啟 (維持設備長時間穩定運行)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-autoreboot"
-
-# NLBWMon 流量統計 (即時與歷史監控各聯網設備的頻寬消耗)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-nlbwmon"
-
-# Statistics (基於 collectd 的圖表監控，可看 CPU 溫度、負載、即時流量曲線)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-statistics"
-
-# ==============================================================================
-# 6. 磁碟管理、NAS 檔案共用與下載 (Storage, NAS & Downloads)
-# ==============================================================================
-# Diskman (磁碟分區、格式化與硬碟健康度 SMART 掛載管理)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-diskman"
-
-# Samba 4 (Windows 網路芳鄰/局域網高速檔案共用)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-samba4"
-
-# 硬碟定時休眠 (保護外接 USB/SATA 機械硬碟壽命與節能)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-hd-idle"
-
-# Aria2 (輕量化高效能離線下載工具)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-aria2"
-
-# Transmission (經典 BT / PT 下載工具)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-transmission"
-
-# qBittorrent (功能強大的 BitTorrent / PT 下載客戶端)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-qbittorrent"
-
-# ==============================================================================
-# 7. 常用命令列排錯與測速工具 (CLI Utilities & Diagnostics)
-# ==============================================================================
-# 常用硬體與系統工具 (curl, wget, htop, 磁碟工具)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES curl wget-ssl htop lsblk fdisk e2fsprogs"
-
-# 網路測速工具 (iperf3 局域網測速)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES iperf3"
-
-export CUSTOM_PACKAGES
+echo "=== 首航配置完成 ===" >> "$LOG_FILE"
+exit 0
 
 ````
 
@@ -375,6 +286,200 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+````
+
+## File: shell/custom-packages.sh
+````sh
+#!/usr/bin/env bash
+# ==============================================================================
+# 自訂擴充軟體包選單 (極簡原生英文版，分類齊全)
+#
+# 【使用說明】:
+# 預設僅啟用 LuCI Web 介面與 Argon 主題。
+# 若需要安裝某個外掛，只需刪除該行最前面的「#」號解除註解即可。
+# （Docker 請直接在 GitHub Actions 頁面勾選，此處無需設定）
+# ==============================================================================
+
+CUSTOM_PACKAGES=""
+
+# ==============================================================================
+# 0. 核心基礎套件 (預設啟用)
+# ==============================================================================
+# 核心 Web 網頁介面 (原生英文)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci"
+
+# Argon 現代自適應主題 (若想用官方原生 Bootstrap 主題，可在該行開頭加 #)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
+
+# ==============================================================================
+# 1. 代理客戶端與科學上網 (Proxy Clients)
+# ==============================================================================
+# OpenClash (基於 Clash.Meta / Mihomo 內核的進階代理工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-openclash"
+
+# PassWall (經典穩定的代理工具，支援 Trojan/VLESS/Hysteria2/TUIC/SS)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-passwall"
+
+# HomeProxy (ImmortalWrt 官方主推，基於 sing-box 的高效能透明代理)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-homeproxy"
+
+# Mihomo (新一代輕量化 Clash.Meta 原生 LuCI 面板)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mihomo"
+
+# ShadowSocksR Plus+ (SSR-Plus 老牌代理工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ssr-plus"
+
+# v2rayA (基於 Xray/V2Ray 核心的多協議網頁版客戶端)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-v2raya"
+
+# ==============================================================================
+# 2. DNS 防污染、解析加速與廣告過濾 (DNS & AdBlock)
+# ==============================================================================
+# SmartDNS (本機防污染 DNS 伺服器，支援測速、分流與快取優化)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-smartdns"
+
+# MosDNS (現代化模組化 DNS 分流工具，常與各類代理搭配)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mosdns"
+
+# AdGuard Home (全網絡廣告與隱私追蹤攔截 DNS 伺服器)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-adguardhome"
+
+# Adblock (官方輕量原生廣告過濾外掛)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-adblock"
+
+# ==============================================================================
+# 3. 異地組網、內網穿透與虛擬私有網路 (VPN & Network Tunnel)
+# ==============================================================================
+# Tailscale (跨平台 WireGuard 零設定異地互聯)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES tailscale iptables-nft"
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-tailscale"
+
+# ZeroTier (虛擬區域網路 P2P 穿透互聯)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-zerotier"
+
+# WireGuard (現代輕量高效能 VPN 通道)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-wireguard"
+
+# FRP Client (內網穿透客戶端，將內網服務映射至公網伺服器)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-frpc"
+
+# ==============================================================================
+# 4. 常用網路功能、喚醒與動態域名 (Network Utilities)
+# ==============================================================================
+# UPnP 自動通訊埠對應 (BT/PT 下載與遊戲聯網必備)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-upnp"
+
+# WOL 網路喚醒 (遠端喚醒區域網路內的電腦/NAS/伺服器)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-wol"
+
+# DDNS 動態域名解析 (搭配 Cloudflare/Aliyun 解析浮動公網 IP)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ddns"
+
+# Socat 通訊埠轉發工具 (支援 IPv4/IPv6 雙向轉發)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-socat"
+
+# MWAN3 (多 WAN 線路接入、多撥與負載均衡)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mwan3"
+
+# SQM 流量控制 (智慧隊列管理，徹底解決 Bufferbloat 高延遲問題)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-sqm"
+
+# ==============================================================================
+# 5. 系統監控、頻寬統計與自動維護 (System & Monitoring)
+# ==============================================================================
+# ttyd (直接在網頁後台開啟 Linux 終端機)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ttyd"
+
+# 定時自動重啟 (維持設備長時間穩定運行)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-autoreboot"
+
+# NLBWMon 流量統計 (即時與歷史監控各聯網設備的頻寬消耗)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-nlbwmon"
+
+# Statistics (基於 collectd 的圖表監控，可看 CPU 溫度、負載、即時流量曲線)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-statistics"
+
+# ==============================================================================
+# 6. 磁碟管理、NAS 檔案共用與下載 (Storage, NAS & Downloads)
+# ==============================================================================
+# Diskman (磁碟分區、格式化與硬碟健康度 SMART 掛載管理)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-diskman"
+
+# Samba 4 (Windows 網路芳鄰/局域網高速檔案共用)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-samba4"
+
+# 硬碟定時休眠 (保護外接 USB/SATA 機械硬碟壽命與節能)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-hd-idle"
+
+# Aria2 (輕量化高效能離線下載工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-aria2"
+
+# Transmission (經典 BT / PT 下載工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-transmission"
+
+# qBittorrent (功能強大的 BitTorrent / PT 下載客戶端)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-qbittorrent"
+
+# ==============================================================================
+# 7. 常用命令列排錯與測速工具 (CLI Utilities & Diagnostics)
+# ==============================================================================
+# 常用硬體與系統工具 (curl, wget, htop, 磁碟工具)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES curl wget-ssl htop lsblk fdisk e2fsprogs"
+
+# 網路測速工具 (iperf3 局域網測速)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES iperf3"
+
+export CUSTOM_PACKAGES
+
+````
+
+## File: shell/fetch-versions.sh
+````sh
+#!/usr/bin/env bash
+# ==============================================================================
+# 腳本名稱: fetch-versions.sh
+# 功能描述: 自動讀取官方 OpenWrt 或 ImmortalWrt 的版本清單與最新正式發布版本
+# ==============================================================================
+set -euo pipefail
+
+TARGET_TYPE="${1:-ImmortalWrt}"
+ACTION="${2:-list}" # 支援 list 或 latest
+
+case "${TARGET_TYPE,,}" in
+  openwrt)
+    REPO_URL="https://github.com/openwrt/openwrt.git"
+    ;;
+  immortalwrt)
+    REPO_URL="https://github.com/immortalwrt/immortalwrt.git"
+    ;;
+  *)
+    echo "錯誤: 未知的韌體類型 '$TARGET_TYPE'，請指定 openwrt 或 immortalwrt。" >&2
+    exit 1
+    ;;
+esac
+
+# 透過 git ls-remote 即時查詢遠端 tags，免除 GitHub API 訪問頻率限制
+RAW_TAGS=$(git ls-remote --tags --refs "$REPO_URL" "v[0-9]*" 2>/dev/null \
+  | awk -F'/' '{print $3}' \
+  | sed 's/^v//' \
+  | grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?$' \
+  | sort -V -r | uniq)
+
+# 當網路異常時的安全降級預設版本列表
+if [ -z "$RAW_TAGS" ]; then
+  if [[ "${TARGET_TYPE,,}" == "openwrt" ]]; then
+    RAW_TAGS=$(printf "24.10.0\n23.05.5\n23.05.4\n23.05.3\n23.05.2")
+  else
+    RAW_TAGS=$(printf "24.10.0\n23.05.4\n23.05.3\n23.05.2\n21.02.7")
+  fi
+fi
+
+if [ "$ACTION" = "latest" ]; then
+  echo "$RAW_TAGS" | head -n 1
+else
+  echo "$RAW_TAGS"
+fi
 
 ````
 
@@ -619,163 +724,460 @@ ls -lh "$OUTPUT_DIR"
 
 ````
 
-## File: files/etc/uci-defaults/99-custom.sh
-````sh
-#!/bin/sh
-# ==============================================================================
-# 首航初始化腳本：開機首次啟動自動執行一次後自我銷毀
-# ==============================================================================
+## File: .github/workflows/combine-code.yml
+````yml
+name: Generate All Codebase to MD
 
-LOG_FILE="/tmp/uci-defaults-init.log"
-echo "=== 開始執行首航配置 $(date) ===" > "$LOG_FILE"
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'combined_project_code.md' # 避免此檔案自身更新引發無限循環
+  workflow_dispatch: # 支援在 GitHub 網頁上手動觸發執行
 
-# 1. 讀取自訂網路與系統設定
-NET_CONF="/etc/custom_network_config"
-if [ -f "$NET_CONF" ]; then
-    . "$NET_CONF"
-fi
+permissions:
+  contents: write
 
-TARGET_LAN_IP="${CUSTOM_LAN_IP:-192.168.100.1}"
-IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
-GATEWAY="${GATEWAY_IP:-192.168.100.2}"
-DNS_LIST="${DNS_SERVERS:-192.168.100.2 8.8.8.8}"
-USE_OFFICIAL="${USE_OFFICIAL_REPO:-false}"
-FW_SYS="${FW_SYSTEM_TYPE:-ImmortalWrt}"
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-# 2. 【核心功能】首次開機強制將軟體源替換為官方源
-if [ "$USE_OFFICIAL" = "true" ]; then
-    echo "正在執行首次開機軟體源官方化..." >> "$LOG_FILE"
-    
-    # 決定官方網域名稱
-    if [ "${FW_SYS}" = "OpenWrt" ]; then
-        TARGET_DOMAIN="downloads.openwrt.org"
-    else
-        TARGET_DOMAIN="downloads.immortalwrt.org"
-    fi
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # 清洗 25.12+ (apk) 軟體源
-    for f in /etc/apk/repositories.d/*.list /etc/apk/repositories; do
-        [ -f "$f" ] || continue
-        sed -i 's|mirrors.vsean.net/openwrt|'"$TARGET_DOMAIN"'|g' "$f"
-        sed -i 's|https://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$f"
-        sed -i 's|http://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$f"
-        sed -i 's|https://.*/snapshots/|https://'"$TARGET_DOMAIN"'/snapshots/|g' "$f"
-        sed -i 's|http://.*/snapshots/|https://'"$TARGET_DOMAIN"'/snapshots/|g' "$f"
-    done
+      - name: Combine All Files into MD
+        run: |
+          OUT_FILE="combined_project_code.md"
+          echo "# Complete Project Codebase" > "$OUT_FILE"
+          echo "Generated on: $(date)" >> "$OUT_FILE"
+          echo "" >> "$OUT_FILE"
 
-    # 清洗 23.05 / 24.10 (opkg) 軟體源
-    if [ -d "/etc/opkg" ]; then
-        find /etc/opkg/ -type f \( -name "*.conf" -o -name "distfeeds.conf" \) 2>/dev/null | while read -r conf_file; do
-            sed -i 's|mirrors.vsean.net/openwrt|'"$TARGET_DOMAIN"'|g' "$conf_file"
-            sed -i 's|https://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$conf_file"
-            sed -i 's|http://.*/releases/|https://'"$TARGET_DOMAIN"'/releases/|g' "$conf_file"
-        done
-    fi
-    echo "✓ 軟體源已強制切換為官方 $TARGET_DOMAIN" >> "$LOG_FILE"
-fi
+          # 遍歷專案內的所有檔案，排除依賴、Git 歷史、打包產物及二進位檔案
+          find . -type f \
+            -not -path "*/node_modules/*" \
+            -not -path "*/.git/*" \
+            -not -path "*/dist/*" \
+            -not -name "package-lock.json" \
+            -not -name "yarn.lock" \
+            -not -name "pnpm-lock.yaml" \
+            -not -name "$OUT_FILE" \
+            -not -name "*.png" \
+            -not -name "*.jpg" \
+            -not -name "*.jpeg" \
+            -not -name "*.gif" \
+            -not -name "*.ico" \
+            -not -name "*.woff*" \
+            -not -name "*.ttf" | while read -r file; do
+              
+              # 取得相對路徑與副檔名
+              rel_path="${file#./}"
+              ext="${file##*.}"
+              
+              # 如果無副檔名，清除變數避免格式混亂
+              if [ "$ext" = "$rel_path" ]; then
+                ext=""
+              fi
+              
+              # 寫入檔案標題
+              echo "## File: $rel_path" >> "$OUT_FILE"
+              # 使用四個反單引號（````）包裹，防止內部程式碼的三個反單引號造成排版衝突
+              echo "\`\`\`\`$ext" >> "$OUT_FILE"
+              cat "$file" >> "$OUT_FILE"
+              echo "" >> "$OUT_FILE"
+              echo "\`\`\`\`" >> "$OUT_FILE"
+              echo "" >> "$OUT_FILE"
+          done
 
-# 3. 網路配置 (旁路由 vs 主路由模式)
-if [ "$IS_BYPASS" = "true" ]; then
-    echo "套用【旁路由模式】: IP=$TARGET_LAN_IP, GW=$GATEWAY" >> "$LOG_FILE"
-
-    uci set network.lan.proto='static'
-    uci set network.lan.ipaddr="$TARGET_LAN_IP"
-    uci set network.lan.netmask='255.255.255.0'
-    uci set network.lan.gateway="$GATEWAY"
-    
-    uci -q delete network.lan.dns
-    for dns_ip in $DNS_LIST; do
-        uci add_list network.lan.dns="$dns_ip"
-    done
-
-    # 關閉旁路由 DHCP 伺服器
-    uci set dhcp.lan.ignore='1'
-    uci -q delete dhcp.lan.dhcpv6
-    uci -q delete dhcp.lan.ra
-    uci -q delete dhcp.lan.ra_slaac
-    uci -q delete dhcp.lan.ra_flags
-
-    # 開啟 LAN 防火牆動態偽裝 (NAT Masquerade)
-    uci set firewall.@zone[0].masq='1'
-    uci set firewall.@zone[0].mtu_fix='1'
-
-    uci set network.wan.disabled='1' 2>/dev/null || true
-    uci set network.wan6.disabled='1' 2>/dev/null || true
-else
-    echo "套用【標準主路由模式】: LAN IP=$TARGET_LAN_IP" >> "$LOG_FILE"
-    uci set network.lan.proto='static'
-    uci set network.lan.ipaddr="$TARGET_LAN_IP"
-    uci set network.lan.netmask='255.255.255.0'
-    uci -q delete network.lan.gateway
-    uci -q delete network.lan.dns
-    uci set dhcp.lan.ignore='0'
-fi
-
-# 4. 防火牆允許入站訪問
-uci set firewall.@zone[0].input='ACCEPT'
-uci set firewall.@zone[1].input='ACCEPT' 2>/dev/null || true
-
-uci commit network
-uci commit dhcp
-uci commit firewall
-
-echo "=== 首航配置完成 ===" >> "$LOG_FILE"
-exit 0
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add combined_project_code.md
+          
+          if git diff --staged --quiet; then
+            echo "No changes in codebase."
+          else
+            git commit -m "docs: auto-generate complete codebase [skip ci]"
+            git push origin main
+          fi
 
 ````
 
-## File: README.md
-````md
-# OpenWrt & ImmortalWrt 雙核心雲端韌體構建工具
+## File: .github/workflows/build-firmware.yml
+````yml
+name: 構建 OpenWrt / ImmortalWrt 自訂韌體
 
-本專案提供基於 GitHub Actions CI 的快速雲端 ImageBuilder 自動化構建方案。無需繁複的本地 Linux 交叉編譯環境，可在 5~8 分鐘內快速打包出專屬固件。
+on:
+  workflow_dispatch:
+    inputs:
+      firmware_type:
+        description: '選擇韌體系統分支'
+        required: true
+        type: choice
+        default: 'ImmortalWrt'
+        options:
+          - 'ImmortalWrt'
+          - 'OpenWrt'
 
----
+      luci_version:
+        description: '韌體版本 (預設 auto 自動抓取最新正式版；亦可手動輸入如: 25.12.2, 24.10.0)'
+        required: true
+        default: 'auto'
+        type: string
 
-### ✨ 特性亮點
-- 🔄 **雙分支選擇**：自由切換構建 **OpenWrt** 官方原版或 **ImmortalWrt** 衍生版。
-- 🔍 **自動版本讀取**：版本欄位預設為 `auto`，自動向官方查詢並下載最新釋出的穩定版本。
-- 💾 **自訂軟體包空間大小**：以 **GB (G)** 為單位，直接輸入數字即可自訂系統空間（如 `1`、`2`、`4`）。
-- 🐳 **可選 Docker 支援**：支援一鍵勾選預裝 Docker 核心與 Dockerman 視覺化管理介面。
-- 🌐 **智慧網路與 PPPoE**：單網口設備自動 DHCP 獲取 IP；多網口機型預設 LAN 為 `192.168.100.1`，支援預設寬頻撥號。
+      rootfs_size_g:
+        description: '軟體包分區空間大小 (單位：GB，請直接輸入數字，例如 1 或 2)'
+        required: true
+        default: '1'
+        type: string
 
----
+      device_model:
+        description: '請直接從下拉選單選擇你的設備型號'
+        required: true
+        type: choice
+        default: 'x86_generic: [x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)'
+        options:
+          # --- AUTO_DEVICES_START ---
+          - 'x86_generic: [x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)'
+          - 'x86_legacy: [x86] 傳統 BIOS 引導舊主機 (Legacy MBR)'
+          - 'nanopi_r2s: [NanoPi] 友善 NanoPi R2S'
+          - 'nanopi_r2c: [NanoPi] 友善 NanoPi R2C'
+          - 'nanopi_r4s: [NanoPi] 友善 NanoPi R4S'
+          - 'nanopi_r4se: [NanoPi] 友善 NanoPi R4SE'
+          - 'nanopi_r5s: [NanoPi] 友善 NanoPi R5S'
+          - 'nanopi_r5c: [NanoPi] 友善 NanoPi R5C'
+          - 'nanopi_r6s: [NanoPi] 友善 NanoPi R6S'
+          - 'nanopi_r6c: [NanoPi] 友善 NanoPi R6C'
+          - 'rpi_4: [樹莓派] Raspberry Pi 4 Model B / CM4'
+          - 'rpi_5: [樹莓派] Raspberry Pi 5'
+          - 'rpi_3: [樹莓派] Raspberry Pi 3 Model B / B+'
+          - 'redmi_ax6000: [紅米] Redmi AX6000 (MT7986)'
+          - 'xiaomi_ax3000t: [小米] 小米路由器 AX3000T'
+          - 'xiaomi_wr30u: [小米] 小米路由器 WR30U'
+          - 'redmi_ax3200: [紅米] Redmi AX3200 / 小米 AX6S'
+          - 'xiaomi_4a_gigabit: [小米] 小米路由器 4A 千兆版 (Gigabit)'
+          - 'glinet_mt3000: [GL.iNet] GL-MT3000 (Beryl AX)'
+          - 'glinet_mt6000: [GL.iNet] GL-MT6000 (Flint 2)'
+          - 'glinet_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2)'
+          - 'glinet_axt1800: [GL.iNet] GL-AXT1800 (Slate AX)'
+          - 'glinet_ax1800: [GL.iNet] GL-AX1800 (Flint)'
+          - 'asus_tuf_ax4200: [華碩] ASUS TUF Gaming AX4200'
+          - 'tplink_xdr6088: [TP-Link] TL-XDR6088 雙 2.5G 路由器'
+          - 'qihoo_360t7: [360] 360 T7 路由器'
+          - 'jcg_q30pro: [捷稀] JCG Q30 Pro'
+          - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621)'
+          # --- AUTO_DEVICES_END ---
 
-### 🚀 快速上手步驟
+      enable_istoreos_dashboard:
+        description: '【介面風格】是否將狀態頁改為 iStoreOS 經典首頁 (QuickStart 網絡拓撲與儀表板)'
+        required: false
+        type: boolean
+        default: false
 
-1. **Fork 本儲存庫** 到您自己的 GitHub 帳號。
-2. 進入您 Fork 後的專案頁面，點選上方的 **Actions** 標籤。
-3. 在左側清單點選 **構建 OpenWrt / ImmortalWrt 自訂韌體**，點擊右側的 **Run workflow**。
-4. 於彈出表單中填寫您的偏好：
-   - **韌體系統分支**：選擇 `ImmortalWrt` 或 `OpenWrt`。
-   - **韌體版本**：預設為 `auto`（自動選定最新穩定版），亦可指定版本（例如 `24.10.0`）。
-   - **軟體包分區空間大小**：直接輸入數字，例如 `2` 代表 2GB 空間。
-   - **是否整合 Docker**：勾選即可帶入 Docker 容器環境。
-5. 點擊綠色按鈕 **Run workflow**，約 5~7 分鐘即可在執行摘要頁面下載打包完成的韌體！
+      use_official_repo:
+        description: '【軟體源】是否改為官方原廠源 (針對 ImmortalWrt 預設鏡像替換為官方 downloads 源)'
+        required: false
+        type: boolean
+        default: false
 
----
+      is_bypass_router:
+        description: '【旁路由開關】是否作為旁路由 / 二級網關模式 (預設不開啟；勾選為開啟)'
+        required: false
+        type: boolean
+        default: false
 
-### 📦 自訂額外外掛
+      lan_ip:
+        description: '本機 LAN IP (主路由預設 192.168.100.1；若為旁路由請輸入同網段固定 IP 如 192.168.100.1)'
+        required: false
+        default: '192.168.100.1'
+        type: string
 
-如需自訂集成更多軟體包或移除特定套件，直接編輯倉庫中的 `shell/custom-packages.sh`：
-- **新增套件**：添加 `CUSTOM_PACKAGES="$CUSTOM_PACKAGES 軟體包名稱"`
-- **移除套件**：添加減號前綴，例如 `-luci-app-samba4`
+      gateway_ip:
+        description: '【旁路由專用】主路由器網關 IP (旁路由需指向主路由 IP，例如: 192.168.100.2)'
+        required: false
+        default: '192.168.100.2'
+        type: string
 
-#### 🔍 官方外掛與軟體包線上查找網址
+      dns_servers:
+        description: '【旁路由專用】自訂 DNS 伺服器 (多個請用空格分開，例如: 192.168.100.2 8.8.8.8)'
+        required: false
+        default: '192.168.100.2 8.8.8.8'
+        type: string
 
-在添加外掛前，建議至下列官方資料庫確認套件確切名稱：
+      include_docker:
+        description: '是否整合 Docker 與 Dockerman 容器介面'
+        required: false
+        type: boolean
+        default: false
 
-1. **OpenWrt 官方資料庫**：
-   - [OpenWrt 官方全套件即時搜尋表 (Package Table)](https://openwrt.org/packages/table/start)：可依照關鍵字、架構檢索所有官方收錄的套件。
-   - [OpenWrt 官方韌體選擇器 (Firmware Selector)](https://firmware-selector.openwrt.org/)：在「Installed Packages」欄位可直接搜尋外掛並即時查看依賴關係。
-   - [OpenWrt 官方 LuCI 外掛源碼總覽 (GitHub)](https://github.com/openwrt/luci/tree/master/applications)：瀏覽所有官方支援的 `luci-app-*` 插件。
+      enable_pppoe:
+        description: '【主路由專用】是否啟用 WAN 端 PPPoE 撥號 (旁路由請保持 false)'
+        required: false
+        type: boolean
+        default: false
 
-2. **ImmortalWrt 資料庫（特色功能與國內優化插件）**：
-   - [ImmortalWrt 韌體選擇器 (Firmware Selector)](https://firmware-selector.immortalwrt.org/)：輸入型號後可在套件清單中直接搜尋 ImmortalWrt 專屬外掛。
-   - [ImmortalWrt LuCI 外掛源碼總覽 (GitHub)](https://github.com/immortalwrt/luci/tree/master/applications)：查看 ImmortalWrt 額外收錄的進階插件（如 TurboACC、各類網路優化等）。
+      pppoe_account:
+        description: 'PPPoE 撥號帳號 (未啟用可留空)'
+        required: false
+        default: ''
+        type: string
 
-> 💡 **小提示 (繁體中文支援)**：
-> 若安裝了以 `luci-app-<名稱>` 開頭的圖形介面外掛，建議同時加上對應的繁體中文語言包 `luci-i18n-<名稱>-zh-tw`（例如：`luci-app-ttyd` 搭配 `luci-i18n-ttyd-zh-tw`）。
+      pppoe_password:
+        description: 'PPPoE 撥號密碼 (未啟用可留空)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build:
+    name: 構建韌體 (${{ inputs.firmware_type }})
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: 檢出專案代碼
+        uses: actions/checkout@v4
+
+      - name: 安裝編譯相依套件
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git \
+            gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl qemu-utils \
+            genisoimage dosfstools mtools xorriso p7zip-full
+          
+          if ! command -v mkisofs &>/dev/null && command -v genisoimage &>/dev/null; then
+            sudo ln -s "$(which genisoimage)" /usr/local/bin/mkisofs
+          fi
+
+      - name: 解析與自動讀取韌體版本
+        id: resolve_version
+        run: |
+          chmod +x shell/fetch-versions.sh
+          INPUT_VER="${{ inputs.luci_version }}"
+          FW_TYPE="${{ inputs.firmware_type }}"
+          
+          if [[ "$INPUT_VER" == "auto" || "$INPUT_VER" == "latest" || -z "$INPUT_VER" ]]; then
+            echo "正在查詢 $FW_TYPE 最新正式發布版本..."
+            DETECTED_VER=$(./shell/fetch-versions.sh "$FW_TYPE" latest)
+            echo "✓ 選定最新版本: $DETECTED_VER"
+            echo "version=$DETECTED_VER" >> $GITHUB_OUTPUT
+          else
+            echo "使用指定版本: $INPUT_VER"
+            echo "version=$INPUT_VER" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 執行韌體生成構建
+        id: run_builder
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FIRMWARE_TYPE: ${{ inputs.firmware_type }}
+          VERSION: ${{ steps.resolve_version.outputs.version }}
+          DEVICE_MODEL: ${{ inputs.device_model }}
+          ROOTFS_SIZE_G: ${{ inputs.rootfs_size_g }}
+          INCLUDE_DOCKER: ${{ inputs.include_docker }}
+          ENABLE_ISTOREOS_DASHBOARD: ${{ inputs.enable_istoreos_dashboard }}
+          USE_OFFICIAL_REPO: ${{ inputs.use_official_repo }}
+          IS_BYPASS_ROUTER: ${{ inputs.is_bypass_router }}
+          LAN_IP: ${{ inputs.lan_ip }}
+          GATEWAY_IP: ${{ inputs.gateway_ip }}
+          DNS_SERVERS: ${{ inputs.dns_servers }}
+          ENABLE_PPPOE: ${{ inputs.enable_pppoe }}
+          PPPOE_ACCOUNT: ${{ inputs.pppoe_account }}
+          PPPOE_PASSWORD: ${{ inputs.pppoe_password }}
+        run: |
+          chmod +x build.sh
+          chmod +x shell/custom-packages.sh
+          chmod +x files/etc/uci-defaults/99-custom.sh
+          ./build.sh
+
+      - name: 產生校驗碼、外掛清單與構建摘要
+        id: summary
+        run: |
+          cd output
+          sha256sum * > sha256sums.txt
+          
+          if [ -f custom_packages.txt ]; then
+            PKGS_MD=$(sed 's/^/- `/' custom_packages.txt | sed 's/$/`/')
+          else
+            PKGS_MD="- 官方標準基礎組件"
+          fi
+          
+          echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **設備型號**: ${{ inputs.device_model }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
+          echo "- **首頁風格**: ${{ inputs.enable_istoreos_dashboard && '🎨 iStoreOS 經典首頁 (QuickStart 網絡拓撲儀表板)' || '經典標準首頁' }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.firmware_type }}" = "OpenWrt" ]; then
+            echo "- **軟體源配置**: 官方原廠源 (downloads.openwrt.org)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ inputs.use_official_repo }}" = "true" ]; then
+            echo "- **軟體源配置**: 官方原廠源 (downloads.immortalwrt.org)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **軟體源配置**: 系統預設鏡像源" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ inputs.is_bypass_router }}" = "true" ]; then
+            echo "- **網路模式**: 🛡️ 旁路由 / 網關模式 (已關閉 DHCP，啟用 NAT 偽裝)" >> $GITHUB_STEP_SUMMARY
+            echo "- **本機 LAN IP**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **主路由網關**: ${{ inputs.gateway_ip }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **自訂 DNS**: ${{ inputs.dns_servers }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **網路模式**: 🌐 標準主路由模式 (DHCP 啟用)" >> $GITHUB_STEP_SUMMARY
+            echo "- **管理網址**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **預設帳號**: \`root\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **預設密碼**: \`無密碼（直接留空登入）\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📦 本次自訂集成軟體包" >> $GITHUB_STEP_SUMMARY
+          echo "$PKGS_MD" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 🔒 檔案 SHA256 校驗表" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          
+          echo "hashes<<EOF" >> $GITHUB_OUTPUT
+          cat sha256sums.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "pkgs_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$PKGS_MD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 上傳韌體構建產物至 Artifacts (保留90天)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
+          path: output/*
+
+      # ==============================================================================
+      # 自動正式發布至 GitHub Releases (永久保存)
+      # ==============================================================================
+      - name: 自動發布至 GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: ${{ success() }}
+        with:
+          tag_name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-build${{ github.run_number }}
+          name: ${{ inputs.firmware_type }} ${{ steps.resolve_version.outputs.version }} (${{ inputs.device_model }})
+          body: |
+            ### 🚀 韌體發布資訊
+            - **韌體系統**: ${{ inputs.firmware_type }}
+            - **系統版本**: ${{ steps.resolve_version.outputs.version }}
+            - **硬體設備**: ${{ inputs.device_model }}
+            - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
+            - **首頁風格**: ${{ inputs.enable_istoreos_dashboard && '🎨 iStoreOS 經典首頁 (QuickStart 網絡拓撲儀表板)' || '經典標準首頁' }}
+            - **軟體源配置**: ${{ inputs.firmware_type == 'OpenWrt' && '官方原廠源 (downloads.openwrt.org)' || (inputs.use_official_repo && '官方原廠源 (downloads.immortalwrt.org)' || '系統預設鏡像源') }}
+            - **網路模式**: ${{ inputs.is_bypass_router && '🛡️ 旁路由模式 (DHCP已關閉，NAT偽裝已開啟)' || '🌐 主路由模式' }}
+            - **管理網址 (LAN IP)**: `http://${{ inputs.lan_ip }}`
+            - **主路由網關 (Gateway)**: `${{ inputs.gateway_ip }}`
+            - **自訂 DNS**: `${{ inputs.dns_servers }}`
+
+            ### 🔑 預設登入認證資訊
+            - **Web 管理網址**: `http://${{ inputs.lan_ip }}`
+            - **使用者名稱 (User)**: `root`
+            - **登入密碼 (Password)**: `無密碼（密碼欄留空，直接按登入即可）`
+
+            ### 📦 本次自訂集成軟體包清單
+            ${{ steps.summary.outputs.pkgs_list }}
+
+            #### 🔒 SHA256 檔案校驗碼
+            ```text
+            ${{ steps.summary.outputs.hashes }}
+            ```
+          files: output/*
+
+````
+
+## File: .github/workflows/sync-upstream.yml
+````yml
+name: 自動同步官方版本與支援設備
+
+on:
+  schedule:
+    # 每週一 UTC 03:00 (台灣/香港時間 11:00) 自動檢查
+    - cron: '0 3 * * 1'
+  workflow_dispatch: # 支援在 GitHub 網頁上手動點擊一鍵更新
+
+permissions:
+  contents: write
+
+jobs:
+  sync-all:
+    name: 同步最新版本與設備資料庫
+    runs-on: ubuntu-latest
+
+    steps:
+      # 使用 SYNC_PAT 檢出專案，賦予寫入 .github/workflows 的權限
+      - name: 檢出專案代碼
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SYNC_PAT }}
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ----- 步驟 1：檢測 OpenWrt / ImmortalWrt 官方最新版本 -----
+      - name: 查詢官方最新發行版本
+        id: versions
+        run: |
+          chmod +x shell/fetch-versions.sh
+          OPENWRT_LATEST=$(./shell/fetch-versions.sh openwrt latest)
+          IMMORTALWRT_LATEST=$(./shell/fetch-versions.sh immortalwrt latest)
+          
+          echo "openwrt_latest=$OPENWRT_LATEST" >> $GITHUB_OUTPUT
+          echo "immortalwrt_latest=$IMMORTALWRT_LATEST" >> $GITHUB_OUTPUT
+
+      # ----- 步驟 2：同步設備庫並直接改寫 Action 選單 -----
+      - name: 執行設備資料庫同步與選單注入腳本
+        run: |
+          chmod +x shell/sync-devices.py
+          python3 shell/sync-devices.py
+
+      # ----- 步驟 3：檢測變更並自動 Commit & Push -----
+      - name: 檢測並自動提交推送變更
+        id: git_check
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 同時檢查 devices.json 與 build-firmware.yml 的改動
+          if git diff --quiet data/devices.json .github/workflows/build-firmware.yml; then
+            echo "設備資料庫與選單已是最新，無需提交變更。"
+            echo "updated=false" >> $GITHUB_OUTPUT
+          else
+            echo "偵測到更新，正在提交變更至儲存庫..."
+            git add data/devices.json .github/workflows/build-firmware.yml
+            git commit -m "chore(sync): 自動同步官方最新版本與支援設備清單 [skip ci]"
+            git push
+            echo "updated=true" >> $GITHUB_OUTPUT
+          fi
+
+      # ----- 步驟 4：產出整合報告至 Step Summary -----
+      - name: 輸出整合執行摘要
+        run: |
+          DEVICE_COUNT=$(jq 'keys | length' data/devices.json 2>/dev/null || echo "0")
+          
+          echo "## 🚀 官方上游同步報告" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 官方最新正式版本" >> $GITHUB_STEP_SUMMARY
+          echo "| 韌體分支 | 最新穩定版本號 |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **OpenWrt** | \`${{ steps.versions.outputs.openwrt_latest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ImmortalWrt** | \`${{ steps.versions.outputs.immortalwrt_latest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📱 支援設備資料庫狀態" >> $GITHUB_STEP_SUMMARY
+          echo "- **當前支援設備總數**: $DEVICE_COUNT 款" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.git_check.outputs.updated }}" = "true" ]; then
+            echo "- **選單更新狀態**: ✅ 已自動同步最新設備並更新 Action 下拉選單" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **選單更新狀態**: ℹ️ 目前已是最新狀態，無須變更" >> $GITHUB_STEP_SUMMARY
+          fi
 
 ````
 
@@ -1615,590 +2017,58 @@ exit 0
 }
 ````
 
-## File: .github/workflows/combine-code.yml
-````yml
-name: Generate All Codebase to MD
+## File: README.md
+````md
+# OpenWrt & ImmortalWrt 雙核心雲端韌體構建工具
 
-on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - 'combined_project_code.md' # 避免此檔案自身更新引發無限循環
-  workflow_dispatch: # 支援在 GitHub 網頁上手動觸發執行
+本專案提供基於 GitHub Actions CI 的快速雲端 ImageBuilder 自動化構建方案。無需繁複的本地 Linux 交叉編譯環境，可在 5~8 分鐘內快速打包出專屬固件。
 
-permissions:
-  contents: write
+---
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+### ✨ 特性亮點
+- 🔄 **雙分支選擇**：自由切換構建 **OpenWrt** 官方原版或 **ImmortalWrt** 衍生版。
+- 🔍 **自動版本讀取**：版本欄位預設為 `auto`，自動向官方查詢並下載最新釋出的穩定版本。
+- 💾 **自訂軟體包空間大小**：以 **GB (G)** 為單位，直接輸入數字即可自訂系統空間（如 `1`、`2`、`4`）。
+- 🐳 **可選 Docker 支援**：支援一鍵勾選預裝 Docker 核心與 Dockerman 視覺化管理介面。
+- 🌐 **智慧網路與 PPPoE**：單網口設備自動 DHCP 獲取 IP；多網口機型預設 LAN 為 `192.168.100.1`，支援預設寬頻撥號。
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+---
 
-      - name: Combine All Files into MD
-        run: |
-          OUT_FILE="combined_project_code.md"
-          echo "# Complete Project Codebase" > "$OUT_FILE"
-          echo "Generated on: $(date)" >> "$OUT_FILE"
-          echo "" >> "$OUT_FILE"
+### 🚀 快速上手步驟
 
-          # 遍歷專案內的所有檔案，排除依賴、Git 歷史、打包產物及二進位檔案
-          find . -type f \
-            -not -path "*/node_modules/*" \
-            -not -path "*/.git/*" \
-            -not -path "*/dist/*" \
-            -not -name "package-lock.json" \
-            -not -name "yarn.lock" \
-            -not -name "pnpm-lock.yaml" \
-            -not -name "$OUT_FILE" \
-            -not -name "*.png" \
-            -not -name "*.jpg" \
-            -not -name "*.jpeg" \
-            -not -name "*.gif" \
-            -not -name "*.ico" \
-            -not -name "*.woff*" \
-            -not -name "*.ttf" | while read -r file; do
-              
-              # 取得相對路徑與副檔名
-              rel_path="${file#./}"
-              ext="${file##*.}"
-              
-              # 如果無副檔名，清除變數避免格式混亂
-              if [ "$ext" = "$rel_path" ]; then
-                ext=""
-              fi
-              
-              # 寫入檔案標題
-              echo "## File: $rel_path" >> "$OUT_FILE"
-              # 使用四個反單引號（````）包裹，防止內部程式碼的三個反單引號造成排版衝突
-              echo "\`\`\`\`$ext" >> "$OUT_FILE"
-              cat "$file" >> "$OUT_FILE"
-              echo "" >> "$OUT_FILE"
-              echo "\`\`\`\`" >> "$OUT_FILE"
-              echo "" >> "$OUT_FILE"
-          done
+1. **Fork 本儲存庫** 到您自己的 GitHub 帳號。
+2. 進入您 Fork 後的專案頁面，點選上方的 **Actions** 標籤。
+3. 在左側清單點選 **構建 OpenWrt / ImmortalWrt 自訂韌體**，點擊右側的 **Run workflow**。
+4. 於彈出表單中填寫您的偏好：
+   - **韌體系統分支**：選擇 `ImmortalWrt` 或 `OpenWrt`。
+   - **韌體版本**：預設為 `auto`（自動選定最新穩定版），亦可指定版本（例如 `24.10.0`）。
+   - **軟體包分區空間大小**：直接輸入數字，例如 `2` 代表 2GB 空間。
+   - **是否整合 Docker**：勾選即可帶入 Docker 容器環境。
+5. 點擊綠色按鈕 **Run workflow**，約 5~7 分鐘即可在執行摘要頁面下載打包完成的韌體！
 
-      - name: Commit and Push changes
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add combined_project_code.md
-          
-          if git diff --staged --quiet; then
-            echo "No changes in codebase."
-          else
-            git commit -m "docs: auto-generate complete codebase [skip ci]"
-            git push origin main
-          fi
+---
 
-````
+### 📦 自訂額外外掛
 
-## File: .github/workflows/build-firmware.yml
-````yml
-name: 構建 OpenWrt / ImmortalWrt 自訂韌體
+如需自訂集成更多軟體包或移除特定套件，直接編輯倉庫中的 `shell/custom-packages.sh`：
+- **新增套件**：添加 `CUSTOM_PACKAGES="$CUSTOM_PACKAGES 軟體包名稱"`
+- **移除套件**：添加減號前綴，例如 `-luci-app-samba4`
 
-on:
-  workflow_dispatch:
-    inputs:
-      firmware_type:
-        description: '選擇韌體系統分支'
-        required: true
-        type: choice
-        default: 'ImmortalWrt'
-        options:
-          - 'ImmortalWrt'
-          - 'OpenWrt'
+#### 🔍 官方外掛與軟體包線上查找網址
 
-      luci_version:
-        description: '韌體版本 (預設 auto 自動抓取最新正式版；亦可手動輸入如: 25.12.2, 24.10.0)'
-        required: true
-        default: 'auto'
-        type: string
+在添加外掛前，建議至下列官方資料庫確認套件確切名稱：
 
-      rootfs_size_g:
-        description: '軟體包分區空間大小 (單位：GB，請直接輸入數字，例如 1 或 2)'
-        required: true
-        default: '1'
-        type: string
+1. **OpenWrt 官方資料庫**：
+   - [OpenWrt 官方全套件即時搜尋表 (Package Table)](https://openwrt.org/packages/table/start)：可依照關鍵字、架構檢索所有官方收錄的套件。
+   - [OpenWrt 官方韌體選擇器 (Firmware Selector)](https://firmware-selector.openwrt.org/)：在「Installed Packages」欄位可直接搜尋外掛並即時查看依賴關係。
+   - [OpenWrt 官方 LuCI 外掛源碼總覽 (GitHub)](https://github.com/openwrt/luci/tree/master/applications)：瀏覽所有官方支援的 `luci-app-*` 插件。
 
-      device_model:
-        description: '請直接從下拉選單選擇你的設備型號'
-        required: true
-        type: choice
-        default: 'x86_generic: [x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)'
-        options:
-          # --- AUTO_DEVICES_START ---
-          - 'x86_generic: [x86] 標準軟路由 / 工控機 (N100, J4125) / 虛擬機 (PVE, ESXi, PC)'
-          - 'x86_legacy: [x86] 傳統 BIOS 引導舊主機 (Legacy MBR)'
-          - 'nanopi_r2s: [友善] NanoPi R2S (雙千兆經典軟路由)'
-          - 'nanopi_r2c: [友善] NanoPi R2C (雙千兆軟路由)'
-          - 'nanopi_r4s: [友善] NanoPi R4S (RK3399 高效軟路由)'
-          - 'nanopi_r4se: [友善] NanoPi R4SE (內建 eMMC 高效軟路由)'
-          - 'nanopi_r5s: [友善] NanoPi R5S (三網口 雙 2.5G 軟路由)'
-          - 'nanopi_r5c: [友善] NanoPi R5C (雙 2.5G 迷你軟路由)'
-          - 'nanopi_r6s: [友善] NanoPi R6S (RK3588 雙 2.5G 旗艦軟路由)'
-          - 'nanopi_r6c: [友善] NanoPi R6C (RK3588 旗艦軟路由)'
-          - 'rpi_4: [樹莓派] Raspberry Pi 4 Model B / CM4'
-          - 'rpi_5: [樹莓派] Raspberry Pi 5 (新一代高效單板電腦)'
-          - 'rpi_3: [樹莓派] Raspberry Pi 3 Model B / B+'
-          - 'redmi_ax6000: [紅米] Redmi AX6000 (MT7986 旗艦家用路由)'
-          - 'xiaomi_ax3000t: [小米] 小米路由器 AX3000T (高 CP 值 Wi-Fi 6)'
-          - 'xiaomi_wr30u: [小米] 小米路由器 WR30U (一般版 / 電信運營商版)'
-          - 'redmi_ax3200: [紅米] Redmi AX3200 / 小米 AX6S'
-          - 'xiaomi_4a_gigabit: [小米] 小米路由器 4A 千兆版 (MT7621)'
-          - 'glinet_mt3000: [GL.iNet] GL-MT3000 (Beryl AX 便攜旅行路由)'
-          - 'glinet_mt6000: [GL.iNet] GL-MT6000 (Flint 2 雙 2.5G 旗艦路由)'
-          - 'glinet_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2 雙網口網關)'
-          - 'glinet_axt1800: [GL.iNet] GL-AXT1800 (Slate AX 三頻旅行路由)'
-          - 'glinet_ax1800: [GL.iNet] GL-AX1800 (Flint 雙頻 Wi-Fi 6 路由)'
-          - 'asus_tuf_ax4200: [華碩 ASUS] asus_tuf-ax4200 (mediatek/filogic)'
-          - 'tplink_xdr6088: [TP-Link] TL-XDR6088 (雙 2.5G 旗艦 Wi-Fi 6)'
-          - 'qihoo_360t7: [360] qihoo_360t7 (mediatek/filogic)'
-          - 'jcg_q30pro: [捷稀] JCG Q30 Pro (MT7981 Wi-Fi 6)'
-          - 'phicomm_k2p: [斐訊] Phicomm K2P (MT7621 經典千兆神機)'
-          - 'asus_rt_ac3100: [華碩 ASUS] asus_rt-ac3100 (bcm53xx/generic)'
-          - 'asus_rt_ac56u: [華碩 ASUS] asus_rt-ac56u (bcm53xx/generic)'
-          - 'asus_rt_ac68u: [華碩 ASUS] asus_rt-ac68u (bcm53xx/generic)'
-          - 'asus_rt_ac87u: [華碩 ASUS] asus_rt-ac87u (bcm53xx/generic)'
-          - 'asus_rt_ac88u: [華碩 ASUS] asus_rt-ac88u (bcm53xx/generic)'
-          - 'asus_rt_n18u: [華碩 ASUS] asus_rt-n18u (bcm53xx/generic)'
-          - 'xiaomi_redmi_router_ax6s: [小米] xiaomi_redmi-router-ax6s (mediatek/mt7622)'
-          - 'asus_rt_ax59u: [華碩 ASUS] asus_rt-ax59u (mediatek/filogic)'
-          - 'asus_tuf_ax6000: [華碩 ASUS] asus_tuf-ax6000 (mediatek/filogic)'
-          - 'glinet_gl_mt2500: [GL.iNet] GL-MT2500 / MT2500A (Brume 2 雙網口網關)'
-          - 'glinet_gl_mt3000: [GL.iNet] GL-MT3000 (Beryl AX 便攜旅行路由)'
-          - 'glinet_gl_mt6000: [GL.iNet] GL-MT6000 (Flint 2 雙 2.5G 旗艦路由)'
-          - 'glinet_gl_x3000: [GL.iNet] glinet_gl-x3000 (mediatek/filogic)'
-          - 'glinet_gl_xe3000: [GL.iNet] glinet_gl-xe3000 (mediatek/filogic)'
-          - 'xiaomi_mi_router_ax3000t: [小米] 小米路由器 AX3000T (高 CP 值 Wi-Fi 6)'
-          - 'xiaomi_mi_router_ax3000t_ubootmod: [小米] xiaomi_mi-router-ax3000t-ubootmod (mediatek/filogic)'
-          - 'xiaomi_mi_router_wr30u_stock: [小米] xiaomi_mi-router-wr30u-stock (mediatek/filogic)'
-          - 'xiaomi_mi_router_wr30u_ubootmod: [小米] xiaomi_mi-router-wr30u-ubootmod (mediatek/filogic)'
-          - 'xiaomi_redmi_router_ax6000_stock: [小米] xiaomi_redmi-router-ax6000-stock (mediatek/filogic)'
-          - 'xiaomi_redmi_router_ax6000_ubootmod: [小米] xiaomi_redmi-router-ax6000-ubootmod (mediatek/filogic)'
-          - 'asus_onhub: [華碩 ASUS] asus_onhub (ipq806x/chromium)'
-          - 'xiaomi_mi_router_hd: [小米] xiaomi_mi-router-hd (ipq806x/generic)'
-          - 'rpi_2: [樹莓派] rpi-2 (bcm27xx/bcm2709)'
-          - 'rpi: [樹莓派] rpi (bcm27xx/bcm2708)'
-          - 'friendlyarm_nanopc_t4: [友善 NanoPi] friendlyarm_nanopc-t4 (rockchip/armv8)'
-          - 'friendlyarm_nanopc_t6: [友善 NanoPi] friendlyarm_nanopc-t6 (rockchip/armv8)'
-          - 'friendlyarm_nanopi_r2c: [友善] NanoPi R2C (雙千兆軟路由)'
-          - 'friendlyarm_nanopi_r2c_plus: [友善 NanoPi] friendlyarm_nanopi-r2c-plus (rockchip/armv8)'
-          - 'friendlyarm_nanopi_r2s: [友善] NanoPi R2S (雙千兆經典軟路由)'
-          - 'friendlyarm_nanopi_r3s: [友善 NanoPi] friendlyarm_nanopi-r3s (rockchip/armv8)'
-          - 'friendlyarm_nanopi_r4s: [友善] NanoPi R4S (RK3399 高效軟路由)'
-          - 'friendlyarm_nanopi_r4s_enterprise: [友善 NanoPi] friendlyarm_nanopi-r4s-enterprise (rockchip/armv8)'
-          - 'friendlyarm_nanopi_r4se: [友善] NanoPi R4SE (內建 eMMC 高效軟路由)'
-          - 'friendlyarm_nanopi_r5c: [友善] NanoPi R5C (雙 2.5G 迷你軟路由)'
-          - 'friendlyarm_nanopi_r5s: [友善] NanoPi R5S (三網口 雙 2.5G 軟路由)'
-          - 'friendlyarm_nanopi_r6c: [友善] NanoPi R6C (RK3588 旗艦軟路由)'
-          - 'friendlyarm_nanopi_r6s: [友善] NanoPi R6S (RK3588 雙 2.5G 旗艦軟路由)'
-          - 'glinet_gl_mv1000: [GL.iNet] glinet_gl-mv1000 (mvebu/cortexa53)'
-          - 'asus_rt_ax89x: [Asus] asus_rt-ax89x (qualcommax/ipq807x)'
-          - 'redmi_ax6: [紅米] redmi_ax6 (qualcommax/ipq807x)'
-          - 'redmi_ax6_stock: [紅米] redmi_ax6-stock (qualcommax/ipq807x)'
-          - 'xiaomi_ax3600: [小米] xiaomi_ax3600 (qualcommax/ipq807x)'
-          - 'xiaomi_ax3600_stock: [小米] xiaomi_ax3600-stock (qualcommax/ipq807x)'
-          - 'xiaomi_ax9000: [小米] xiaomi_ax9000 (qualcommax/ipq807x)'
-          - 'asus_rp_n53: [華碩 ASUS] asus_rp-n53 (ramips/mt7620)'
-          - 'asus_rt_ac51u: [華碩 ASUS] asus_rt-ac51u (ramips/mt7620)'
-          - 'asus_rt_ac54u: [華碩 ASUS] asus_rt-ac54u (ramips/mt7620)'
-          - 'asus_rt_n14u: [華碩 ASUS] asus_rt-n14u (ramips/mt7620)'
-          - 'glinet_gl_mt300a: [GL.iNet] glinet_gl-mt300a (ramips/mt7620)'
-          - 'glinet_gl_mt300n: [GL.iNet] glinet_gl-mt300n (ramips/mt7620)'
-          - 'glinet_gl_mt750: [GL.iNet] glinet_gl-mt750 (ramips/mt7620)'
-          - 'xiaomi_miwifi_mini: [小米] xiaomi_miwifi-mini (ramips/mt7620)'
-          - 'asus_rt_ac1200: [華碩 ASUS] asus_rt-ac1200 (ramips/mt76x8)'
-          - 'asus_rt_ac1200_v2: [華碩 ASUS] asus_rt-ac1200-v2 (ramips/mt76x8)'
-          - 'asus_rt_n12_vp_b1: [華碩 ASUS] asus_rt-n12-vp-b1 (ramips/mt76x8)'
-          - 'glinet_gl_mt300n_v2: [GL.iNet] glinet_gl-mt300n-v2 (ramips/mt76x8)'
-          - 'glinet_microuter_n300: [GL.iNet] glinet_microuter-n300 (ramips/mt76x8)'
-          - 'glinet_vixmini: [GL.iNet] glinet_vixmini (ramips/mt76x8)'
-          - 'xiaomi_mi_ra75: [小米] xiaomi_mi-ra75 (ramips/mt76x8)'
-          - 'xiaomi_mi_router_4a_100m: [小米] xiaomi_mi-router-4a-100m (ramips/mt76x8)'
-          - 'xiaomi_mi_router_4a_100m_intl: [小米] xiaomi_mi-router-4a-100m-intl (ramips/mt76x8)'
-          - 'xiaomi_mi_router_4a_100m_intl_v2: [小米] xiaomi_mi-router-4a-100m-intl-v2 (ramips/mt76x8)'
-          - 'xiaomi_mi_router_4c: [小米] xiaomi_mi-router-4c (ramips/mt76x8)'
-          - 'xiaomi_miwifi_3c: [小米] xiaomi_miwifi-3c (ramips/mt76x8)'
-          - 'xiaomi_miwifi_nano: [小米] xiaomi_miwifi-nano (ramips/mt76x8)'
-          - 'asus_rp_ac56: [華碩 ASUS] asus_rp-ac56 (ramips/mt7621)'
-          - 'asus_rp_ac87: [華碩 ASUS] asus_rp-ac87 (ramips/mt7621)'
-          - 'asus_rt_ac57u_v1: [華碩 ASUS] asus_rt-ac57u-v1 (ramips/mt7621)'
-          - 'asus_rt_ac65p: [華碩 ASUS] asus_rt-ac65p (ramips/mt7621)'
-          - 'asus_rt_ac85p: [華碩 ASUS] asus_rt-ac85p (ramips/mt7621)'
-          - 'asus_rt_ax53u: [華碩 ASUS] asus_rt-ax53u (ramips/mt7621)'
-          - 'asus_rt_ax54: [華碩 ASUS] asus_rt-ax54 (ramips/mt7621)'
-          - 'asus_rt_n56u_b1: [華碩 ASUS] asus_rt-n56u-b1 (ramips/mt7621)'
-          - 'glinet_gl_mt1300: [GL.iNet] glinet_gl-mt1300 (ramips/mt7621)'
-          - 'xiaomi_mi_router_3_pro: [小米] xiaomi_mi-router-3-pro (ramips/mt7621)'
-          - 'xiaomi_mi_router_3g: [小米] xiaomi_mi-router-3g (ramips/mt7621)'
-          - 'xiaomi_mi_router_3g_v2: [小米] xiaomi_mi-router-3g-v2 (ramips/mt7621)'
-          - 'xiaomi_mi_router_4: [小米] xiaomi_mi-router-4 (ramips/mt7621)'
-          - 'xiaomi_mi_router_4a_gigabit: [小米] 小米路由器 4A 千兆版 (MT7621)'
-          - 'xiaomi_mi_router_4a_gigabit_v2: [小米] xiaomi_mi-router-4a-gigabit-v2 (ramips/mt7621)'
-          - 'xiaomi_mi_router_ac2100: [小米] xiaomi_mi-router-ac2100 (ramips/mt7621)'
-          - 'xiaomi_mi_router_cr6606: [小米] xiaomi_mi-router-cr6606 (ramips/mt7621)'
-          - 'xiaomi_mi_router_cr6608: [小米] xiaomi_mi-router-cr6608 (ramips/mt7621)'
-          - 'xiaomi_mi_router_cr6609: [小米] xiaomi_mi-router-cr6609 (ramips/mt7621)'
-          - 'xiaomi_redmi_router_ac2100: [小米] xiaomi_redmi-router-ac2100 (ramips/mt7621)'
-          - 'asus_map_ac2200: [華碩 ASUS] asus_map-ac2200 (ipq40xx/generic)'
-          - 'asus_rt_ac42u: [華碩 ASUS] asus_rt-ac42u (ipq40xx/generic)'
-          - 'asus_rt_ac58u: [華碩 ASUS] asus_rt-ac58u (ipq40xx/generic)'
-          - 'glinet_gl_a1300: [GL.iNet] glinet_gl-a1300 (ipq40xx/generic)'
-          - 'glinet_gl_ap1300: [GL.iNet] glinet_gl-ap1300 (ipq40xx/generic)'
-          - 'glinet_gl_b1300: [GL.iNet] glinet_gl-b1300 (ipq40xx/generic)'
-          - 'glinet_gl_b2200: [GL.iNet] glinet_gl-b2200 (ipq40xx/generic)'
-          - 'friendlyarm_nanopi_neo_plus2: [友善 NanoPi] friendlyarm_nanopi-neo-plus2 (sunxi/cortexa53)'
-          - 'friendlyarm_nanopi_neo2: [友善 NanoPi] friendlyarm_nanopi-neo2 (sunxi/cortexa53)'
-          - 'friendlyarm_nanopi_r1s_h5: [友善 NanoPi] friendlyarm_nanopi-r1s-h5 (sunxi/cortexa53)'
-          - 'friendlyarm_nanopi_m1_plus: [友善 NanoPi] friendlyarm_nanopi-m1-plus (sunxi/cortexa7)'
-          - 'friendlyarm_nanopi_neo: [友善 NanoPi] friendlyarm_nanopi-neo (sunxi/cortexa7)'
-          - 'friendlyarm_nanopi_neo_air: [友善 NanoPi] friendlyarm_nanopi-neo-air (sunxi/cortexa7)'
-          - 'friendlyarm_nanopi_r1: [友善 NanoPi] friendlyarm_nanopi-r1 (sunxi/cortexa7)'
-          - 'friendlyarm_zeropi: [友善 NanoPi] friendlyarm_zeropi (sunxi/cortexa7)'
-          - 'glinet_gl_ar300m_nand: [GL.iNet] glinet_gl-ar300m-nand (ath79/nand)'
-          - 'glinet_gl_ar300m_nor: [GL.iNet] glinet_gl-ar300m-nor (ath79/nand)'
-          - 'glinet_gl_ar750s_nor: [GL.iNet] glinet_gl-ar750s-nor (ath79/nand)'
-          - 'glinet_gl_ar750s_nor_nand: [GL.iNet] glinet_gl-ar750s-nor-nand (ath79/nand)'
-          - 'glinet_gl_e750: [GL.iNet] glinet_gl-e750 (ath79/nand)'
-          - 'glinet_gl_s200_nor: [GL.iNet] glinet_gl-s200-nor (ath79/nand)'
-          - 'glinet_gl_s200_nor_nand: [GL.iNet] glinet_gl-s200-nor-nand (ath79/nand)'
-          - 'glinet_gl_x1200_nor: [GL.iNet] glinet_gl-x1200-nor (ath79/nand)'
-          - 'glinet_gl_x1200_nor_nand: [GL.iNet] glinet_gl-x1200-nor-nand (ath79/nand)'
-          - 'glinet_gl_xe300: [GL.iNet] glinet_gl-xe300 (ath79/nand)'
-          - 'asus_pl_ac56: [華碩 ASUS] asus_pl-ac56 (ath79/generic)'
-          - 'asus_rp_ac51: [華碩 ASUS] asus_rp-ac51 (ath79/generic)'
-          - 'asus_rp_ac66: [華碩 ASUS] asus_rp-ac66 (ath79/generic)'
-          - 'asus_rt_ac59u: [華碩 ASUS] asus_rt-ac59u (ath79/generic)'
-          - 'asus_rt_ac59u_v2: [華碩 ASUS] asus_rt-ac59u-v2 (ath79/generic)'
-          - 'asus_zenwifi_cd6n: [華碩 ASUS] asus_zenwifi-cd6n (ath79/generic)'
-          - 'asus_zenwifi_cd6r: [華碩 ASUS] asus_zenwifi-cd6r (ath79/generic)'
-          - 'glinet_6408: [GL.iNet] glinet_6408 (ath79/generic)'
-          - 'glinet_6416: [GL.iNet] glinet_6416 (ath79/generic)'
-          - 'glinet_gl_ar150: [GL.iNet] glinet_gl-ar150 (ath79/generic)'
-          - 'glinet_gl_ar300m_lite: [GL.iNet] glinet_gl-ar300m-lite (ath79/generic)'
-          - 'glinet_gl_ar300m16: [GL.iNet] glinet_gl-ar300m16 (ath79/generic)'
-          - 'glinet_gl_ar750: [GL.iNet] glinet_gl-ar750 (ath79/generic)'
-          - 'glinet_gl_mifi: [GL.iNET] glinet_gl-mifi (ath79/generic)'
-          - 'glinet_gl_usb150: [GL.iNET] glinet_gl-usb150 (ath79/generic)'
-          - 'glinet_gl_x300b: [GL.iNet] glinet_gl-x300b (ath79/generic)'
-          - 'glinet_gl_x750: [GL.iNet] glinet_gl-x750 (ath79/generic)'
-          - 'qihoo_c301: [360] qihoo_c301 (ath79/generic)'
-          - 'xiaomi_aiot_ac2350: [小米] xiaomi_aiot-ac2350 (ath79/generic)'
-          - 'xiaomi_mi_router_4q: [小米] xiaomi_mi-router-4q (ath79/generic)'
-          - 'asus_rt_ac53u: [華碩 ASUS] asus_rt-ac53u (bcm47xx/mips74k)'
-          - 'asus_rt_n14uhp: [華碩 ASUS] asus_rt-n14uhp (bcm47xx/mips74k)'
-          - 'asus_rt_n15u: [華碩 ASUS] asus_rt-n15u (bcm47xx/mips74k)'
-          - 'asus_rt_n16: [華碩 ASUS] asus_rt-n16 (bcm47xx/mips74k)'
-          - 'asus_rt_n66u: [華碩 ASUS] asus_rt-n66u (bcm47xx/mips74k)'
-          - 'asus_rt_n66w: [華碩 ASUS] asus_rt-n66w (bcm47xx/mips74k)'
-          - 'asus_gt_ac5300: [華碩 ASUS] asus_gt-ac5300 (bcm4908/generic)'
-          - 'asus_rt_n56u: [華碩 ASUS] asus_rt-n56u (ramips/rt3883)'
-          # --- AUTO_DEVICES_END ---
+2. **ImmortalWrt 資料庫（特色功能與國內優化插件）**：
+   - [ImmortalWrt 韌體選擇器 (Firmware Selector)](https://firmware-selector.immortalwrt.org/)：輸入型號後可在套件清單中直接搜尋 ImmortalWrt 專屬外掛。
+   - [ImmortalWrt LuCI 外掛源碼總覽 (GitHub)](https://github.com/immortalwrt/luci/tree/master/applications)：查看 ImmortalWrt 額外收錄的進階插件（如 TurboACC、各類網路優化等）。
 
-      use_official_repo:
-        description: '【軟體源】是否改為官方原廠源 (針對 ImmortalWrt 預設鏡像替換為官方 downloads 源)'
-        required: false
-        type: boolean
-        default: false
-
-      is_bypass_router:
-        description: '【旁路由開關】是否作為旁路由 / 二級網關模式 (預設不開啟；勾選為開啟)'
-        required: false
-        type: boolean
-        default: false
-
-      lan_ip:
-        description: '本機 LAN IP (主路由預設 192.168.100.1；若為旁路由請輸入同網段固定 IP 如 192.168.100.1)'
-        required: false
-        default: '192.168.100.1'
-        type: string
-
-      gateway_ip:
-        description: '【旁路由專用】主路由器網關 IP (旁路由需指向主路由 IP，例如: 192.168.100.2)'
-        required: false
-        default: '192.168.100.2'
-        type: string
-
-      dns_servers:
-        description: '【旁路由專用】自訂 DNS 伺服器 (多個請用空格分開，例如: 192.168.100.2 8.8.8.8)'
-        required: false
-        default: '192.168.100.2 8.8.8.8'
-        type: string
-
-      include_docker:
-        description: '是否整合 Docker 與 Dockerman 容器介面'
-        required: false
-        type: boolean
-        default: false
-
-      enable_pppoe:
-        description: '【主路由專用】是否啟用 WAN 端 PPPoE 撥號 (旁路由請保持 false)'
-        required: false
-        type: boolean
-        default: false
-
-      pppoe_account:
-        description: 'PPPoE 撥號帳號 (未啟用可留空)'
-        required: false
-        default: ''
-        type: string
-
-      pppoe_password:
-        description: 'PPPoE 撥號密碼 (未啟用可留空)'
-        required: false
-        default: ''
-        type: string
-
-jobs:
-  build:
-    name: 構建韌體 (${{ inputs.firmware_type }})
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-
-    steps:
-      - name: 檢出專案代碼
-        uses: actions/checkout@v4
-
-      - name: 安裝編譯相依套件
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git \
-            gettext libssl-dev xsltproc wget unzip python3 zstd file jq curl qemu-utils \
-            genisoimage dosfstools mtools xorriso p7zip-full
-          
-          if ! command -v mkisofs &>/dev/null && command -v genisoimage &>/dev/null; then
-            sudo ln -s "$(which genisoimage)" /usr/local/bin/mkisofs
-          fi
-
-      - name: 解析與自動讀取韌體版本
-        id: resolve_version
-        run: |
-          chmod +x shell/fetch-versions.sh
-          INPUT_VER="${{ inputs.luci_version }}"
-          FW_TYPE="${{ inputs.firmware_type }}"
-          
-          if [[ "$INPUT_VER" == "auto" || "$INPUT_VER" == "latest" || -z "$INPUT_VER" ]]; then
-            echo "正在查詢 $FW_TYPE 最新正式發布版本..."
-            DETECTED_VER=$(./shell/fetch-versions.sh "$FW_TYPE" latest)
-            echo "✓ 選定最新版本: $DETECTED_VER"
-            echo "version=$DETECTED_VER" >> $GITHUB_OUTPUT
-          else
-            echo "使用指定版本: $INPUT_VER"
-            echo "version=$INPUT_VER" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 執行韌體生成構建
-        id: run_builder
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FIRMWARE_TYPE: ${{ inputs.firmware_type }}
-          VERSION: ${{ steps.resolve_version.outputs.version }}
-          DEVICE_MODEL: ${{ inputs.device_model }}
-          ROOTFS_SIZE_G: ${{ inputs.rootfs_size_g }}
-          INCLUDE_DOCKER: ${{ inputs.include_docker }}
-          USE_OFFICIAL_REPO: ${{ inputs.use_official_repo }}
-          IS_BYPASS_ROUTER: ${{ inputs.is_bypass_router }}
-          LAN_IP: ${{ inputs.lan_ip }}
-          GATEWAY_IP: ${{ inputs.gateway_ip }}
-          DNS_SERVERS: ${{ inputs.dns_servers }}
-          ENABLE_PPPOE: ${{ inputs.enable_pppoe }}
-          PPPOE_ACCOUNT: ${{ inputs.pppoe_account }}
-          PPPOE_PASSWORD: ${{ inputs.pppoe_password }}
-        run: |
-          chmod +x build.sh
-          chmod +x shell/custom-packages.sh
-          chmod +x files/etc/uci-defaults/99-custom.sh
-          ./build.sh
-
-      - name: 產生校驗碼、外掛清單與構建摘要
-        id: summary
-        run: |
-          cd output
-          sha256sum * > sha256sums.txt
-          
-          if [ -f custom_packages.txt ]; then
-            PKGS_MD=$(sed 's/^/- `/' custom_packages.txt | sed 's/$/`/')
-          else
-            PKGS_MD="- 官方標準基礎組件"
-          fi
-          
-          echo "### 構建成果摘要 🚀" >> $GITHUB_STEP_SUMMARY
-          echo "- **系統分支**: ${{ inputs.firmware_type }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **固件版本**: ${{ steps.resolve_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **設備型號**: ${{ inputs.device_model }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **軟體包分區大小**: ${{ inputs.rootfs_size_g }} GB" >> $GITHUB_STEP_SUMMARY
-          
-          # 智慧判斷軟體源說明文字
-          if [ "${{ inputs.firmware_type }}" = "OpenWrt" ]; then
-            echo "- **軟體源配置**: 官方原廠源 (downloads.openwrt.org)" >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ inputs.use_official_repo }}" = "true" ]; then
-            echo "- **軟體源配置**: 官方原廠源 (downloads.immortalwrt.org)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **軟體源配置**: 系統預設鏡像源" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "${{ inputs.is_bypass_router }}" = "true" ]; then
-            echo "- **網路模式**: 🛡️ 旁路由 / 網關模式 (已關閉 DHCP，啟用 NAT 偽裝)" >> $GITHUB_STEP_SUMMARY
-            echo "- **本機 LAN IP**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
-            echo "- **主路由網關**: ${{ inputs.gateway_ip }}" >> $GITHUB_STEP_SUMMARY
-            echo "- **自訂 DNS**: ${{ inputs.dns_servers }}" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **網路模式**: 🌐 標準主路由模式 (DHCP 啟用)" >> $GITHUB_STEP_SUMMARY
-            echo "- **管理網址**: http://${{ inputs.lan_ip }}" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "- **預設帳號**: \`root\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **預設密碼**: \`無密碼（直接留空登入）\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### 📦 本次自訂集成軟體包" >> $GITHUB_STEP_SUMMARY
-          echo "$PKGS_MD" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### 🔒 檔案 SHA256 校驗表" >> $GITHUB_STEP_SUMMARY
-          echo '```text' >> $GITHUB_STEP_SUMMARY
-          cat sha256sums.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          
-          echo "hashes<<EOF" >> $GITHUB_OUTPUT
-          cat sha256sums.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          echo "pkgs_list<<EOF" >> $GITHUB_OUTPUT
-          echo "$PKGS_MD" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: 上傳韌體構建產物至 Artifacts (保留90天)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-${{ inputs.rootfs_size_g }}G
-          path: output/*
-
-      # ==============================================================================
-      # 自動正式發布至 GitHub Releases (永久保存)
-      # ==============================================================================
-      - name: 自動發布至 GitHub Releases
-        uses: softprops/action-gh-release@v2
-        if: ${{ success() }}
-        with:
-          tag_name: ${{ inputs.firmware_type }}-${{ steps.resolve_version.outputs.version }}-build${{ github.run_number }}
-          name: ${{ inputs.firmware_type }} ${{ steps.resolve_version.outputs.version }} (${{ inputs.device_model }})
-          body: |
-            ### 🚀 韌體發布資訊
-            - **韌體系統**: ${{ inputs.firmware_type }}
-            - **系統版本**: ${{ steps.resolve_version.outputs.version }}
-            - **硬體設備**: ${{ inputs.device_model }}
-            - **磁碟空間**: ${{ inputs.rootfs_size_g }} GB
-            - **軟體源配置**: ${{ inputs.firmware_type == 'OpenWrt' && '官方原廠源 (downloads.openwrt.org)' || (inputs.use_official_repo && '官方原廠源 (downloads.immortalwrt.org)' || '系統預設鏡像源') }}
-            - **網路模式**: ${{ inputs.is_bypass_router && '🛡️ 旁路由模式 (DHCP已關閉，NAT偽裝已開啟)' || '🌐 主路由模式' }}
-            - **管理網址 (LAN IP)**: `http://${{ inputs.lan_ip }}`
-            - **主路由網關 (Gateway)**: `${{ inputs.gateway_ip }}`
-            - **自訂 DNS**: `${{ inputs.dns_servers }}`
-
-            ### 🔑 預設登入認證資訊
-            - **Web 管理網址**: `http://${{ inputs.lan_ip }}`
-            - **使用者名稱 (User)**: `root`
-            - **登入密碼 (Password)**: `無密碼（密碼欄留空，直接按登入即可）`
-
-            ### 📦 本次自訂集成軟體包清單
-            ${{ steps.summary.outputs.pkgs_list }}
-
-            #### 🔒 SHA256 檔案校驗碼
-            ```text
-            ${{ steps.summary.outputs.hashes }}
-            ```
-          files: output/*
-
-````
-
-## File: .github/workflows/sync-upstream.yml
-````yml
-name: 自動同步官方版本與支援設備
-
-on:
-  schedule:
-    # 每週一 UTC 03:00 (台灣/香港時間 11:00) 自動檢查
-    - cron: '0 3 * * 1'
-  workflow_dispatch: # 支援在 GitHub 網頁上手動點擊一鍵更新
-
-permissions:
-  contents: write
-
-jobs:
-  sync-all:
-    name: 同步最新版本與設備資料庫
-    runs-on: ubuntu-latest
-
-    steps:
-      # 使用 SYNC_PAT 檢出專案，賦予寫入 .github/workflows 的權限
-      - name: 檢出專案代碼
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.SYNC_PAT }}
-
-      - name: 設定 Python 環境
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      # ----- 步驟 1：檢測 OpenWrt / ImmortalWrt 官方最新版本 -----
-      - name: 查詢官方最新發行版本
-        id: versions
-        run: |
-          chmod +x shell/fetch-versions.sh
-          OPENWRT_LATEST=$(./shell/fetch-versions.sh openwrt latest)
-          IMMORTALWRT_LATEST=$(./shell/fetch-versions.sh immortalwrt latest)
-          
-          echo "openwrt_latest=$OPENWRT_LATEST" >> $GITHUB_OUTPUT
-          echo "immortalwrt_latest=$IMMORTALWRT_LATEST" >> $GITHUB_OUTPUT
-
-      # ----- 步驟 2：同步設備庫並直接改寫 Action 選單 -----
-      - name: 執行設備資料庫同步與選單注入腳本
-        run: |
-          chmod +x shell/sync-devices.py
-          python3 shell/sync-devices.py
-
-      # ----- 步驟 3：檢測變更並自動 Commit & Push -----
-      - name: 檢測並自動提交推送變更
-        id: git_check
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # 同時檢查 devices.json 與 build-firmware.yml 的改動
-          if git diff --quiet data/devices.json .github/workflows/build-firmware.yml; then
-            echo "設備資料庫與選單已是最新，無需提交變更。"
-            echo "updated=false" >> $GITHUB_OUTPUT
-          else
-            echo "偵測到更新，正在提交變更至儲存庫..."
-            git add data/devices.json .github/workflows/build-firmware.yml
-            git commit -m "chore(sync): 自動同步官方最新版本與支援設備清單 [skip ci]"
-            git push
-            echo "updated=true" >> $GITHUB_OUTPUT
-          fi
-
-      # ----- 步驟 4：產出整合報告至 Step Summary -----
-      - name: 輸出整合執行摘要
-        run: |
-          DEVICE_COUNT=$(jq 'keys | length' data/devices.json 2>/dev/null || echo "0")
-          
-          echo "## 🚀 官方上游同步報告" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 官方最新正式版本" >> $GITHUB_STEP_SUMMARY
-          echo "| 韌體分支 | 最新穩定版本號 |" >> $GITHUB_STEP_SUMMARY
-          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| **OpenWrt** | \`${{ steps.versions.outputs.openwrt_latest }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **ImmortalWrt** | \`${{ steps.versions.outputs.immortalwrt_latest }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📱 支援設備資料庫狀態" >> $GITHUB_STEP_SUMMARY
-          echo "- **當前支援設備總數**: $DEVICE_COUNT 款" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.git_check.outputs.updated }}" = "true" ]; then
-            echo "- **選單更新狀態**: ✅ 已自動同步最新設備並更新 Action 下拉選單" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **選單更新狀態**: ℹ️ 目前已是最新狀態，無須變更" >> $GITHUB_STEP_SUMMARY
-          fi
+> 💡 **小提示 (繁體中文支援)**：
+> 若安裝了以 `luci-app-<名稱>` 開頭的圖形介面外掛，建議同時加上對應的繁體中文語言包 `luci-i18n-<名稱>-zh-tw`（例如：`luci-app-ttyd` 搭配 `luci-i18n-ttyd-zh-tw`）。
 
 ````
 
