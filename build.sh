@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 官方軟體源強制切換 + 旁路由引導模式 + 官方原裝英文 + VMware .vmdk
+# 支援 iStoreOS 狀態首頁風格 + 官方軟體源切換 + 旁路由模式 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -13,6 +13,7 @@ SELECTED_DEVICE="${DEVICE_MODEL:-x86_generic}"
 SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
 USE_OFFICIAL="${USE_OFFICIAL_REPO:-false}"
+ENABLE_ISTORE_HOME="${ENABLE_ISTOREOS_DASHBOARD:-false}"
 IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
 TARGET_IP="${LAN_IP:-192.168.100.1}"
 GW_IP="${GATEWAY_IP:-192.168.100.2}"
@@ -44,7 +45,8 @@ echo "  系統版本: $FW_VER"
 echo "  所選設備: $DEVICE_KEY"
 echo "  目標架構 (Target): $TARGET_INPUT"
 echo "  設備代號 (Profile): $PROFILE_NAME"
-echo "  強制官方源: $([ "$USE_OFFICIAL" = "true" ] && echo "啟用 (downloads 官方源)" || echo "停用 (維持預設)")"
+echo "  iStoreOS 首頁: $([ "$ENABLE_ISTORE_HOME" = "true" ] && echo "🎨 啟用 (QuickStart 拓撲儀表板)" || echo "預設首頁")"
+echo "  官方原廠源: $([ "$USE_OFFICIAL" = "true" ] && echo "啟用 (downloads 官方源)" || echo "停用 (維持預設)")"
 echo "  網路模式: $([ "$IS_BYPASS" = "true" ] && echo "🛡️ 旁路由模式" || echo "🌐 主路由模式")"
 echo "  本機 LAN IP: $TARGET_IP"
 if [ "$IS_BYPASS" = "true" ]; then
@@ -89,7 +91,7 @@ tar -xf "$WORKDIR/$ARCHIVE_NAME" -C "$WORKDIR"
 EXTRACTED_DIR=$(find "$WORKDIR" -maxdepth 1 -type d -name "*imagebuilder*" | head -n 1)
 cd "$EXTRACTED_DIR"
 
-# 4. 【編譯期清洗】若啟用官方源，直接替換 ImageBuilder 本地的 repositories.conf
+# 4. 【編譯期清洗】若啟用官方源，直接替換 ImageBuilder 的 repositories.conf
 if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
   echo "正在將 ImageBuilder 編譯環境替換為官方源..."
   if [[ "${FW_TYPE,,}" == "immortalwrt" ]]; then
@@ -100,7 +102,6 @@ if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
     sed -i 's|https://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
     sed -i 's|http://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
   fi
-  echo "✓ ImageBuilder repositories.conf 已清洗為官方原廠源"
 fi
 
 # 5. 讀取並整合軟體包清單
@@ -110,6 +111,12 @@ PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
 if [[ "$DOCKER_FLAG" == "true" ]]; then
   echo "✓ 已勾選整合 Docker 與 Dockerman 管理套件"
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman"
+fi
+
+# 【核心功能】整合 iStoreOS 經典首頁組件 (QuickStart)
+if [[ "$ENABLE_ISTORE_HOME" == "true" ]]; then
+  echo "✓ 已勾選啟用 iStoreOS 經典首頁 (QuickStart 網絡拓撲與狀態儀表板)"
+  PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD quickstart luci-app-quickstart"
 fi
 
 is_apk=false
@@ -129,6 +136,7 @@ GATEWAY_IP="$GW_IP"
 DNS_SERVERS="$DNS_IPS"
 USE_OFFICIAL_REPO="$USE_OFFICIAL"
 FW_SYSTEM_TYPE="$FW_TYPE"
+ENABLE_ISTOREOS_HOME="$ENABLE_ISTORE_HOME"
 EOF
 
 if [[ "$PPPOE_EN" == "true" ]]; then
