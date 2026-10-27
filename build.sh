@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 iStoreOS 狀態首頁風格 + 官方軟體源切換 + 旁路由模式 + VMware .vmdk
+# 支援 Argon 主題與 Argon-Config 同步注入 + iStoreOS 首頁 + 旁路由模式 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -113,7 +113,7 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman"
 fi
 
-# 【核心功能】整合 iStoreOS 經典首頁組件 (QuickStart)
+# 整合 iStoreOS 經典首頁組件 (QuickStart)
 if [[ "$ENABLE_ISTORE_HOME" == "true" ]]; then
   echo "✓ 已勾選啟用 iStoreOS 經典首頁 (QuickStart 網絡拓撲與狀態儀表板)"
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD quickstart luci-app-quickstart"
@@ -147,18 +147,30 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 7. 第三方套件處理 (Argon 主題)
+# 7. 第三方套件處理 (luci-theme-argon 與 luci-app-argon-config)
 mkdir -p packages
 
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+  # 下載相容的 luci-theme-argon
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
-    echo "下載 luci-theme-argon 安裝包..."
+    echo "正在下載相容的 luci-theme-argon..."
     if [ "$is_apk" = true ]; then
-      ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
+      ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
     else
-      ARGON_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
+      ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
     fi
-    wget -q -c --timeout=20 --tries=3 "$ARGON_URL" -P packages/ || true
+    wget -q -c --timeout=20 --tries=3 "$ARGON_THEME_URL" -P packages/ || true
+  fi
+
+  # 下載相容的 luci-app-argon-config
+  if [[ " $PACKAGES_TO_BUILD " =~ " luci-app-argon-config " ]]; then
+    echo "正在下載相容的 luci-app-argon-config..."
+    if [ "$is_apk" = true ]; then
+      ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config-0.9-r1.apk"
+    else
+      ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config_0.9_all.ipk"
+    fi
+    wget -q -c --timeout=20 --tries=3 "$ARGON_CONFIG_URL" -P packages/ || true
   fi
 
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
