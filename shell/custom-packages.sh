@@ -11,8 +11,8 @@ CUSTOM_PACKAGES=""
 # 核心 Web 網頁介面 + 官方繁體中文語言包
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci luci-i18n-base-zh-tw luci-i18n-firewall-zh-tw"
 
-# Argon 現代自適應主題 + Argon 外觀配置管理後台
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon luci-app-argon-config"
+# Argon 現代自適應主題 (已內建外觀配置後台，無須額外安裝 argon-config)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
 
 # 旁路由通用底層相依套件 (預先植入)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup bash"
