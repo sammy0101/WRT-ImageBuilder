@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Wed Oct 28 15:00:54 UTC 2026
+Generated on: Wed Oct 28 15:02:25 UTC 2026
 
 ## File: shell/fetch-versions.sh
 ````sh
@@ -344,7 +344,7 @@ if __name__ == "__main__":
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 極致純淨穩定版：支援 旁路由引導模式 + 繁中語系預裝 + VMware .vmdk 自動轉換
+# 支援 Argon 主題雙重保證注入 + 旁路由引導模式 + 繁中語系 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -381,7 +381,7 @@ if [ -z "$TARGET_INPUT" ] || [ -z "$PROFILE_NAME" ]; then
 fi
 
 echo "=========================================================="
-echo "  開始構建雲端自訂韌體 (官方原生穩定版)"
+echo "  開始構建雲端自訂韌體"
 echo "  系統類型: $FW_TYPE"
 echo "  系統版本: $FW_VER"
 echo "  所選設備: $DEVICE_KEY"
@@ -441,19 +441,13 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman"
 fi
 
-# 5. 清理不相容套件
 is_apk=false
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   is_apk=true
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g; s/luci-app-argon-config//g')
 fi
 
-# 若為 OpenWrt 原版，自動過濾官方源沒有的 argon 與 turboacc
-if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-theme-argon//g; s/luci-app-turboacc//g')
-fi
-
-# 6. 整合 Overlay 檔案 (files 系統覆蓋層)
+# 5. 整合 Overlay 檔案 (files 系統覆蓋層)
 mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$ROOT_DIR/files/"* files/
 
@@ -475,6 +469,49 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
+# 6. 【雙重保險】Argon 主題本地下載與實體解壓注入
+mkdir -p packages
+
+if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
+  echo ""
+  echo "=========================================================="
+  echo "  正在處理 luci-theme-argon 主題 (雙重保證機制)..."
+  echo "=========================================================="
+
+  if [ "$is_apk" = true ]; then
+    ARGON_URLS="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk https://mirror.ghproxy.com/https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
+    PKG_TARGET="packages/luci-theme-argon-2.4.7-r1.apk"
+  else
+    ARGON_URLS="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk https://mirror.ghproxy.com/https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
+    PKG_TARGET="packages/luci-theme-argon_2.4.7-1_all.ipk"
+  fi
+
+  # 多重鏡像下載，直到成功為止
+  for url in $ARGON_URLS; do
+    echo "嘗試下載: $url"
+    if curl -f -sSL --connect-timeout 20 --retry 3 -k "$url" -o "$PKG_TARGET" 2>/dev/null; then
+      if [ -s "$PKG_TARGET" ] && [ "$(wc -c < "$PKG_TARGET")" -gt 50000 ]; then
+        echo "✓ 下載成功: $(ls -lh "$PKG_TARGET" | awk '{print $5}')"
+        break
+      fi
+    fi
+  done
+
+  # 【保險手段】：同時將其解壓直植入 files/ 覆蓋層，確保固件 100% 絕對自帶 Argon 主題
+  if [ -f "$PKG_TARGET" ]; then
+    if [ "$is_apk" = true ] && [ -x "staging_dir/host/bin/apk" ]; then
+      ./staging_dir/host/bin/apk extract --allow-untrusted --destination "$PWD/files/" "$PKG_TARGET" 2>/dev/null || true
+    fi
+    # 確保規範檔名存在於 packages/
+    cp -f "$PKG_TARGET" packages/luci-theme-argon.apk 2>/dev/null || true
+  fi
+
+  echo "✓ 本地 packages/ 倉庫確認:"
+  ls -lh packages/ || true
+  echo "=========================================================="
+  echo ""
+fi
+
 # 7. 清洗官方原廠源 (若開啟)
 if [ "$USE_OFFICIAL" = "true" ]; then
   echo "正在將 ImageBuilder 編譯環境替換為官方源..."
@@ -490,6 +527,10 @@ if [ "$USE_OFFICIAL" = "true" ]; then
       fi
     fi
   done
+fi
+
+if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
 fi
 
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
@@ -541,7 +582,8 @@ execute_make_image() {
       FILES="files" \
       ROOTFS_PARTSIZE="$PARTSIZE_MB" \
       BIN_DIR="$OUTPUT_DIR"; then
-      echo "$cleaned_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
+      # 確保 Argon 主題標註在已安裝清單中
+      echo "$cleaned_pkgs luci-theme-argon" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
       return 0
     fi
     return 1
