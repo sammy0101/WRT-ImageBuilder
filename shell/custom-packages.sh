@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 自訂擴充軟體包選單 (預載繁體中文與 Argon 美化，一功能一行)
-#
-# 【使用說明】:
-# 預設已預裝 LuCI 繁體中文介面、Argon 主題與配置面板、旁路由必備工具鏈。
-# 想要啟用哪個進階功能，只需刪除該行最前面的「#」號即可整套裝齊！
-# （Docker 請直接在 GitHub Actions 網頁勾選，此處無需設定）
 # ==============================================================================
 
 CUSTOM_PACKAGES=""
@@ -13,24 +8,24 @@ CUSTOM_PACKAGES=""
 # ==============================================================================
 # 0. 核心基礎套件 (預設一同安裝)
 # ==============================================================================
-# 核心 Web 網頁介面 + 官方繁體中文語言包 (預設預裝)
+# 核心 Web 網頁介面 + 官方繁體中文語言包
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci luci-i18n-base-zh-tw luci-i18n-firewall-zh-tw"
 
-# Argon 現代自適應主題 + Argon 外觀配置管理後台 (整套啟用)
+# Argon 現代自適應主題 + Argon 外觀配置管理後台
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon luci-app-argon-config"
 
 # 旁路由通用底層相依套件 (預先植入)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup bash"
 
 # ==============================================================================
-# 1. daeuniverse 官方最新代理 (整套一行，支援 OpenWrt 與 ImmortalWrt 25.12+)
+# 1. daeuniverse 官方最新代理 (適用於 25.12+ 核心 6.12，支援 OpenWrt 與 ImmortalWrt)
 # 官方規範: https://openwrt.daeuniverse.org/zh-tw/
 # ==============================================================================
-# honk (官方最新 Rust eBPF 核心 + LuCI 面板 + 繁中語系)
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk luci-app-honk luci-i18n-daeuniverse-zh-tw"
+# honk (官方最新 Rust eBPF 核心 + LuCI 面板)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk luci-app-honk"
 
-# dae (官方經典 eBPF 核心 + LuCI 面板 + 繁中語系)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae luci-app-dae luci-i18n-daeuniverse-zh-tw"
+# dae (官方經典 eBPF 核心 + LuCI 面板)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae luci-app-dae"
 
 # ==============================================================================
 # 2. 其他主流代理客戶端 (整套一行)
