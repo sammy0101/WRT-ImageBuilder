@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Wed Oct 28 14:38:59 UTC 2026
+Generated on: Wed Oct 28 14:43:14 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -350,14 +350,13 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup bash"
 
 # ==============================================================================
-# 1. daeuniverse 官方最新代理 (適用於 25.12+ 核心 6.12，支援 OpenWrt 與 ImmortalWrt)
-# 官方規範: https://openwrt.daeuniverse.org/zh-tw/
+# 1. daeuniverse 官方最新代理 (支援 OpenWrt 25.12+ 與 ImmortalWrt)
 # ==============================================================================
-# honk (官方最新 Rust eBPF 核心 + LuCI 面板 + 繁中語言包)
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk luci-app-honk luci-i18n-daeuniverse-zh-tw"
+# honk (官方最新 Rust eBPF 核心 + LuCI 面板)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk luci-app-honk"
 
-# dae (官方經典 eBPF 核心 + LuCI 面板 + 繁中語言包)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae luci-app-dae luci-i18n-daeuniverse-zh-tw"
+# dae (官方經典 eBPF 核心 + LuCI 面板)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae luci-app-dae"
 
 # ==============================================================================
 # 2. 其他主流代理客戶端 (整套一行)
