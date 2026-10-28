@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 daeuniverse 官方簽章規範 + iStoreOS 專屬倉庫 + 旁路由模式 + VMware .vmdk
+# 支援 daeuniverse 官方簽章倉庫無 tag 完美構建 + 自癒機制 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -46,7 +46,7 @@ echo "  所選設備: $DEVICE_KEY"
 echo "  目標架構 (Target): $TARGET_INPUT"
 echo "  設備代號 (Profile): $PROFILE_NAME"
 echo "  iStoreOS 首頁: $([ "$ENABLE_ISTORE_HOME" = "true" ] && echo "🎨 啟用" || echo "預設首頁")"
-echo "  官方原廠源: $([ "$USE_OFFICIAL" = "true" ] && echo "啟用 (downloads 官方源)" || echo "停用 (維持預設)")"
+echo "  官方原廠源: $([ "$USE_OFFICIAL" = "true" ] && echo "啟用" || echo "停用")"
 echo "  網路模式: $([ "$IS_BYPASS" = "true" ] && echo "🛡️ 旁路由模式" || echo "🌐 主路由模式")"
 echo "  本機 LAN IP: $TARGET_IP"
 if [ "$IS_BYPASS" = "true" ]; then
@@ -100,26 +100,18 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman"
 fi
 
-# 5. 整合 iStoreOS 經典首頁組件 (QuickStart) 與 KoolCenter 官方源
+# 整合 iStoreOS 經典首頁組件 (QuickStart)
 if [[ "$ENABLE_ISTORE_HOME" == "true" ]]; then
-  echo "✓ 已勾選啟用 iStoreOS 經典首頁 (QuickStart)，正在掛載 iStore 專屬倉庫..."
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD quickstart luci-app-quickstart"
-  
-  if [ -f "repositories.conf" ]; then
-    ISTORE_REPO="https://istore.linkease.com/repo/all/store"
-    # 加入未簽名忽略，因為 iStore 源可能沒有匯入 ImageBuilder
-    sed -i 's/^option check_signature/# option check_signature/g' repositories.conf || true
-    echo "src/gz istore_packages ${ISTORE_REPO}" >> repositories.conf
-  fi
 fi
 
 is_apk=false
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   is_apk=true
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g; s/luci-app-argon-config//g')
 fi
 
-# 6. 整合 Overlay 檔案 (files 系統覆蓋層)
+# 5. 整合 Overlay 檔案 (files 系統覆蓋層)
 mkdir -p files/etc/uci-defaults files/etc/config files/etc/apk/keys files/etc/apk/repositories.d
 cp -r "$ROOT_DIR/files/"* files/
 
@@ -141,14 +133,14 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 7. 【daeuniverse 官方簽章倉庫掛載】(https://openwrt.daeuniverse.org/zh-tw/)
-if [[ " $PACKAGES_TO_BUILD " =~ "@daeuniverse" ]]; then
+# 6. 【daeuniverse 官方簽章倉庫掛載】(https://openwrt.daeuniverse.org/zh-tw/)
+if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]] || [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
   echo ""
   echo "=========================================================="
   echo "  偵測到選擇安裝 honk / dae，按 daeuniverse 官方規範配置..."
   echo "=========================================================="
 
-  # 下載官方簽名公鑰並匯入編譯器與固件信任庫
+  # 下載官方簽名公鑰並匯入信任庫
   wget -q -c --timeout=20 --tries=3 "https://openwrt.daeuniverse.org/public-key.pem" -O files/etc/apk/keys/daeuniverse.pem || true
   
   if [ -f "files/etc/apk/keys/daeuniverse.pem" ]; then
@@ -163,7 +155,7 @@ if [[ " $PACKAGES_TO_BUILD " =~ "@daeuniverse" ]]; then
 
   FEED_BASE="https://openwrt.daeuniverse.org/25.12"
   
-  # 寫入開機後的 apk 來源清單
+  # 開機後持久源清單 (路由器本機使用 @daeuniverse 標籤)
   cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
 @daeuniverse ${FEED_BASE}/packages/${PKG_ARCH}/packages.adb
 DAE_REPO
@@ -171,19 +163,19 @@ DAE_REPO
     echo "@daeuniverse ${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> files/etc/apk/repositories.d/daeuniverse.list
   fi
 
-  # 追加進 ImageBuilder 的 repositories.conf 讓編譯期即時抓取
+  # ImageBuilder 編譯期倉庫清單 (不加 @daeuniverse 標籤，讓 apk 能全局索引)
   if [ -f "repositories.conf" ]; then
-    echo "@daeuniverse ${FEED_BASE}/packages/${PKG_ARCH}/packages.adb" >> repositories.conf
+    echo "${FEED_BASE}/packages/${PKG_ARCH}/packages.adb" >> repositories.conf
     if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-      echo "@daeuniverse ${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> repositories.conf
+      echo "${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> repositories.conf
     fi
-    echo "✓ 已成功將 daeuniverse 官方帶有 @daeuniverse 標籤的倉庫掛載至 ImageBuilder"
+    echo "✓ 已成功將 daeuniverse 官方倉庫掛載至 ImageBuilder (全域索引模式)"
   fi
   echo "=========================================================="
   echo ""
 fi
 
-# 8. 第三方套件處理 (Argon 主題本地 APK 補齊)
+# 7. 第三方套件處理 (Argon 主題本地補齊)
 mkdir -p packages
 
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
@@ -200,7 +192,7 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
 fi
 
-# 9. 清洗官方原廠源 (若開啟)
+# 8. 清洗官方原廠源 (若開啟)
 if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
   echo "正在將 ImageBuilder 編譯環境替換為官方源..."
   if [[ "${FW_TYPE,,}" == "immortalwrt" ]]; then
@@ -216,7 +208,7 @@ fi
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
 
-# 10. 打包構建 (帶有容錯自癒)
+# 9. 打包構建 (升級容錯自癒)
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -233,7 +225,13 @@ execute_make_image() {
     return 0
   fi
 
+  # 1. 抓取 (no such package)
   local missing_pkgs=$(grep -E '^\s+[a-zA-Z0-9_\.\-\@]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
+  
+  # 2. 抓取 missing repository tags 報錯中的套件名稱
+  local tag_missing=$(grep -oE "dependency '[^']+'" "$log_tmp" | cut -d"'" -f2 | tr '\n' ' ')
+
+  # 3. 抓取引起問題的父級依賴
   local parent_raw=$(grep -oE '[a-zA-Z0-9_\.\-\@]+\[[^]]+\]' "$log_tmp" | cut -d'[' -f1 | grep -v '^world$' | tr '\n' ' ')
   local parent_clean=""
   for p in $parent_raw; do
@@ -244,13 +242,13 @@ execute_make_image() {
   local missing_opkg=$(grep -oE "Unknown package '[^']+'" "$log_tmp" | cut -d"'" -f2 | tr '\n' ' ')
   local missing_opkg2=$(grep -oE "Cannot install package [^.]+" "$log_tmp" | awk '{print $NF}' | tr '\n' ' ')
 
-  local all_culprits=$(echo "$missing_pkgs $parent_clean $missing_opkg $missing_opkg2" | xargs -n1 2>/dev/null | sort -u | xargs 2>/dev/null || echo "")
+  local all_culprits=$(echo "$missing_pkgs $tag_missing $parent_clean $missing_opkg $missing_opkg2" | xargs -n1 2>/dev/null | sed -E 's/@[a-zA-Z0-9_-]+//g' | grep -v '^make$' | sort -u | xargs 2>/dev/null || echo "")
 
   if [ -n "$all_culprits" ]; then
     echo "⚠️ 剔除不可用套件: $all_culprits 並重試..."
     local cleaned_pkgs="$current_pkgs"
     for item in $all_culprits; do
-      cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )$item( |\$)/ /g")
+      cleaned_pkgs=$(echo "$cleaned_pkgs" | sed -E "s/(^| )$item(@[a-zA-Z0-9_-]+)?( |\$)/ /g")
       rm -f packages/*"$item"* 2>/dev/null || true
     done
     cleaned_pkgs=$(echo "$cleaned_pkgs" | xargs)
@@ -272,7 +270,7 @@ execute_make_image() {
 
 execute_make_image "$PACKAGES_TO_BUILD"
 
-# 11. 自動轉換 VMware .vmdk 虛擬磁碟格式
+# 10. 自動轉換 VMware .vmdk 虛擬磁碟格式
 if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
   echo "正在生成 VMware .vmdk 虛擬磁碟..."
   for img_gz in "$OUTPUT_DIR"/*combined*.img.gz; do
