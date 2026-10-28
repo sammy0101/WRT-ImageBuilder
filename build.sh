@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 honk 官方套件精準注入 + 旁路由引導模式 + 繁中語系 + VMware .vmdk
+# 支援 honk 官方套件精準注入 + 自動檔名規範化 + 旁路由引導模式 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -126,7 +126,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【精準下載 honk 官方套件至本地 packages/】
+# 6. 【精準下載 honk 並規範化檔名以符合 APK 索引機制】
 mkdir -p packages
 
 if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]]; then
@@ -135,20 +135,31 @@ if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]]; then
   echo "  正在下載精準匹配 x86_64 的 honk 與 vmlinux-btf 套件..."
   echo "=========================================================="
 
-  # 下載官方公鑰備查
   wget -q -c --timeout=20 --tries=3 "https://openwrt.daeuniverse.org/public-key.pem" -O files/etc/apk/keys/daeuniverse.pem || true
 
-  # 抓取 25.12.6 x86_64 專屬的 honk 與 vmlinux-btf
   HONK_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/openwrt-25.12.6-6.12.112-20261024"
 
-  # 精準下載 x86_64 專用檔案 (避免下載其他 aarch64 檔案佔用空間)
-  wget -q -c --timeout=25 --tries=3 "${HONK_BASE}/25.12.6-honk-0.1.0_beta1-x86_64.apk" -P packages/ || true
+  # 下載原始檔案
+  wget -q -c --timeout=25 --tries=3 "${HONK_BASE}/25.12.6-honk-0.1.0_beta1-x86_64.apk" -O packages/downloaded_honk.apk || true
   
   if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-    wget -q -c --timeout=25 --tries=3 "${HONK_BASE}/25.12.6-vmlinux-btf-x86-64-6.12.112.apk" -P packages/ || true
+    wget -q -c --timeout=25 --tries=3 "${HONK_BASE}/25.12.6-vmlinux-btf-x86-64-6.12.112.apk" -O packages/downloaded_btf.apk || true
   fi
 
-  echo "✓ 本地 packages/ 倉庫檔案清單:"
+  # 【關鍵修復】將下載的檔案重新命名為 apk 包管理器索引能精確辨識的標準命名
+  if [ -f "packages/downloaded_honk.apk" ]; then
+    # 建立多個標準軟連結，保證 apk 索引解析器 100% 能找到實體檔案
+    cp -f packages/downloaded_honk.apk packages/honk-0.1.0_beta1-r1.apk
+    cp -f packages/downloaded_honk.apk packages/honk.apk
+    rm -f packages/downloaded_honk.apk
+  fi
+
+  if [ -f "packages/downloaded_btf.apk" ]; then
+    cp -f packages/downloaded_btf.apk packages/vmlinux-btf.apk
+    rm -f packages/downloaded_btf.apk
+  fi
+
+  echo "✓ 本地 packages/ 倉庫標準化清單:"
   ls -lh packages/ || true
   echo "=========================================================="
   echo ""
