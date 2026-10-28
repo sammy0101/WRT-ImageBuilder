@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Wed Oct 28 10:50:51 UTC 2026
+Generated on: Wed Oct 28 10:51:17 UTC 2026
 
 ## File: shell/fetch-versions.sh
 ````sh
@@ -387,7 +387,7 @@ if __name__ == "__main__":
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 Argon 主題與 Argon-Config 同步注入 + iStoreOS 首頁 + 旁路由模式 + VMware .vmdk
+# 支援 daeuniverse 官方標準源安裝 (honk / dae) + iStoreOS 首頁 + 旁路由模式 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -477,20 +477,7 @@ tar -xf "$WORKDIR/$ARCHIVE_NAME" -C "$WORKDIR"
 EXTRACTED_DIR=$(find "$WORKDIR" -maxdepth 1 -type d -name "*imagebuilder*" | head -n 1)
 cd "$EXTRACTED_DIR"
 
-# 4. 【編譯期清洗】若啟用官方源，直接替換 ImageBuilder 的 repositories.conf
-if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
-  echo "正在將 ImageBuilder 編譯環境替換為官方源..."
-  if [[ "${FW_TYPE,,}" == "immortalwrt" ]]; then
-    sed -i 's|mirrors.vsean.net/openwrt|downloads.immortalwrt.org|g' repositories.conf
-    sed -i 's|https://.*/releases/|https://downloads.immortalwrt.org/releases/|g' repositories.conf
-    sed -i 's|http://.*/releases/|https://downloads.immortalwrt.org/releases/|g' repositories.conf
-  else
-    sed -i 's|https://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
-    sed -i 's|http://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
-  fi
-fi
-
-# 5. 讀取並整合軟體包清單
+# 4. 讀取並整合軟體包清單
 source "$ROOT_DIR/shell/custom-packages.sh"
 PACKAGES_TO_BUILD="$CUSTOM_PACKAGES"
 
@@ -511,8 +498,8 @@ if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
 fi
 
-# 6. 整合 Overlay 檔案 (files 系統覆蓋層)
-mkdir -p files/etc/uci-defaults files/etc/config
+# 5. 整合 Overlay 檔案 (files 系統覆蓋層)
+mkdir -p files/etc/uci-defaults files/etc/config files/etc/apk/keys files/etc/apk/repositories.d
 cp -r "$ROOT_DIR/files/"* files/
 
 cat <<EOF > files/etc/custom_network_config
@@ -533,13 +520,78 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 7. 第三方套件處理 (luci-theme-argon 與 luci-app-argon-config)
+# 6. 【daeuniverse 官方標準安裝管道】(https://openwrt.daeuniverse.org/zh-tw/)
+HAS_DAEUNIVERSE=false
+if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]] || [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
+  HAS_DAEUNIVERSE=true
+  echo ""
+  echo "=========================================================="
+  echo "  偵測到選擇安裝 honk / dae，按 daeuniverse 官方規範配置..."
+  echo "=========================================================="
+
+  # (A) 下載官方公鑰並匯入信任庫
+  echo "正在下載 daeuniverse 官方簽章公鑰..."
+  wget -q -c --timeout=20 --tries=3 "https://openwrt.daeuniverse.org/public-key.pem" -O files/etc/apk/keys/daeuniverse.pem || true
+  
+  # 複製給本機 ImageBuilder host apk 信任庫
+  if [ -f "files/etc/apk/keys/daeuniverse.pem" ]; then
+    mkdir -p staging_dir/host/etc/apk/keys /etc/apk/keys 2>/dev/null || true
+    cp -f files/etc/apk/keys/daeuniverse.pem staging_dir/host/etc/apk/keys/ 2>/dev/null || true
+    sudo cp -f files/etc/apk/keys/daeuniverse.pem /etc/apk/keys/ 2>/dev/null || true
+    echo "✓ 官方簽章公鑰已成功就位"
+  fi
+
+  # (B) 動態解析架構與軟體源
+  # 從系統資訊或 repositories.conf 解析封包架構 (例: x86_64, aarch64_cortex-a53)
+  PKG_ARCH=$(grep -m1 '/packages/' repositories.conf 2>/dev/null | sed -n 's|.*/packages/\([^/]*\)/.*|\1|p' || echo "x86_64")
+  [ -z "$PKG_ARCH" ] && PKG_ARCH="x86_64"
+
+  FEED_BASE="https://openwrt.daeuniverse.org/25.12"
+  
+  # 寫入路由器開機後的持久軟體源配置 (/etc/apk/repositories.d/daeuniverse.list)
+  if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+    cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
+${FEED_BASE}/packages/${PKG_ARCH}/packages.adb
+${FEED_BASE}/kmods/${FW_VER}/${TARGET_INPUT}/packages.adb
+DAE_REPO
+  else
+    cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
+${FEED_BASE}/packages/${PKG_ARCH}/packages.adb
+DAE_REPO
+  fi
+
+  # 同步注入 ImageBuilder 的 repositories.conf 供編譯期即時下載
+  if [ -f "repositories.conf" ]; then
+    echo "${FEED_BASE}/packages/${PKG_ARCH}/packages.adb" >> repositories.conf
+    if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+      echo "${FEED_BASE}/kmods/${FW_VER}/${TARGET_INPUT}/packages.adb" >> repositories.conf
+    fi
+    echo "✓ 已成功將 daeuniverse 官方 signed 倉庫加入 ImageBuilder"
+  fi
+
+  echo "=========================================================="
+  echo ""
+fi
+
+# 7. 清洗官方原廠源 (若開啟)
+if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
+  echo "正在將 ImageBuilder 編譯環境替換為官方源..."
+  if [[ "${FW_TYPE,,}" == "immortalwrt" ]]; then
+    sed -i 's|mirrors.vsean.net/openwrt|downloads.immortalwrt.org|g' repositories.conf
+    sed -i 's|https://.*/releases/|https://downloads.immortalwrt.org/releases/|g' repositories.conf
+    sed -i 's|http://.*/releases/|https://downloads.immortalwrt.org/releases/|g' repositories.conf
+  else
+    sed -i 's|https://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
+    sed -i 's|http://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
+  fi
+fi
+
+# 8. 第三方套件處理 (Argon 主題)
 mkdir -p packages
 
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-  # 下載相容的 luci-theme-argon
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
-    echo "正在下載相容的 luci-theme-argon..."
+    echo "下載 luci-theme-argon 安裝包..."
     if [ "$is_apk" = true ]; then
       ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
     else
@@ -548,9 +600,8 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     wget -q -c --timeout=20 --tries=3 "$ARGON_THEME_URL" -P packages/ || true
   fi
 
-  # 下載相容的 luci-app-argon-config
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-app-argon-config " ]]; then
-    echo "正在下載相容的 luci-app-argon-config..."
+    echo "下載 luci-app-argon-config 安裝包..."
     if [ "$is_apk" = true ]; then
       ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config-0.9-r1.apk"
     else
@@ -565,7 +616,7 @@ fi
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
 
-# 8. 打包構建
+# 9. 打包構建 (帶有容錯自癒)
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -622,7 +673,7 @@ execute_make_image() {
 
 execute_make_image "$PACKAGES_TO_BUILD"
 
-# 9. 自動轉換 VMware .vmdk 虛擬磁碟格式
+# 10. 自動轉換 VMware .vmdk 虛擬磁碟格式
 if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
   echo "正在生成 VMware .vmdk 虛擬磁碟..."
   for img_gz in "$OUTPUT_DIR"/*combined*.img.gz; do
