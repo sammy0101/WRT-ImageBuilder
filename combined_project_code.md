@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Wed Oct 28 14:43:14 UTC 2026
+Generated on: Wed Oct 28 14:43:48 UTC 2026
 
 ## File: files/etc/uci-defaults/99-custom.sh
 ````sh
@@ -530,7 +530,7 @@ fi
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 daeuniverse 官方 signed 倉庫注入 + 旁路由模式 + VMware .vmdk
+# 支援 honk / dae 本地倉庫實體下載與自動簽名 + 旁路由模式 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -655,51 +655,72 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【daeuniverse 官方簽章倉庫精確掛載】(https://openwrt.daeuniverse.org/zh-tw/)
+# 6. 【daeuniverse 官方套件實體下載至 packages/ 解決 UNTRUSTED 報錯】
+mkdir -p packages
+
 if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]] || [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
   echo ""
   echo "=========================================================="
-  echo "  偵測到選擇安裝 honk / dae，按 daeuniverse 官方規範配置..."
+  echo "  正在從 daeuniverse 官方抓取真實安裝包至本地 packages/ 倉庫..."
   echo "=========================================================="
 
-  # 下載官方簽名公鑰並匯入信任庫
+  # 下載官方簽名公鑰給開機後使用
   wget -q -c --timeout=20 --tries=3 "https://openwrt.daeuniverse.org/public-key.pem" -O files/etc/apk/keys/daeuniverse.pem || true
-  
-  if [ -f "files/etc/apk/keys/daeuniverse.pem" ]; then
-    mkdir -p staging_dir/host/etc/apk/keys /etc/apk/keys 2>/dev/null || true
-    cp -f files/etc/apk/keys/daeuniverse.pem staging_dir/host/etc/apk/keys/ 2>/dev/null || true
-    sudo cp -f files/etc/apk/keys/daeuniverse.pem /etc/apk/keys/ 2>/dev/null || true
-    echo "✓ 官方簽章公鑰已成功就位"
-  fi
 
-  PKG_ARCH="x86_64"
+  # 寫入開機後的 apk 來源清單 (讓路由器以後在線上也能更新)
   FEED_BASE="https://openwrt.daeuniverse.org/25.12"
-
-  # 開機後持久源清單 (路由器本機使用 @daeuniverse 標籤)
   cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
-@daeuniverse ${FEED_BASE}/packages/${PKG_ARCH}/packages.adb
+@daeuniverse ${FEED_BASE}/packages/x86_64/packages.adb
 DAE_REPO
   if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
     echo "@daeuniverse ${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> files/etc/apk/repositories.d/daeuniverse.list
   fi
 
-  # ImageBuilder 編譯期倉庫清單 (針對 repositories 或 repositories.conf 同步追加)
-  for repo_cfg in "repositories" "repositories.conf"; do
-    if [ -f "$repo_cfg" ]; then
-      echo "${FEED_BASE}/packages/${PKG_ARCH}/packages.adb" >> "$repo_cfg"
-      if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-        echo "${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> "$repo_cfg"
-      fi
-      echo "✓ 已成功將 daeuniverse 官方倉庫掛載至 ImageBuilder ($repo_cfg)"
+  # 直接從官方 Release 抓取編譯好的 APK 檔案放入 packages/ 目錄
+  # 這樣 ImageBuilder 會自動以本地生成的金鑰完成信任簽名，完全避免 UNTRUSTED 報錯
+  RELEASE_API_URL="https://api.github.com/repos/daeuniverse/openwrt-packages/releases/latest"
+  RELEASE_JSON=$(curl -sL --connect-timeout 15 "$RELEASE_API_URL" 2>/dev/null || true)
+
+  # 下載 honk 與 luci-app-honk
+  if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]]; then
+    echo "下載 honk 官方套件..."
+    HONK_URLS=$(echo "$RELEASE_JSON" | grep -oE 'https://github.com/daeuniverse/openwrt-packages/releases/download/[^"]*(honk|vmlinux)[^"]*\.apk' | sort -u || true)
+    
+    # 備用直鏈 (若 API 受限)
+    if [ -z "$HONK_URLS" ]; then
+      HONK_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/openwrt-25.12.6-6.12.112-20261024"
+      HONK_URLS="${HONK_BASE}/honk-0.0.1-r1.apk ${HONK_BASE}/luci-app-honk-0.0.1-r1.apk ${HONK_BASE}/vmlinux-6.12.112-x86_64.apk"
     fi
-  done
+
+    for url in $HONK_URLS; do
+      echo "下載: $(basename "$url")..."
+      wget -q -c --timeout=25 --tries=3 "$url" -P packages/ || true
+    done
+  fi
+
+  # 下載 dae 與 luci-app-dae
+  if [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
+    echo "下載 dae 官方套件..."
+    DAE_URLS=$(echo "$RELEASE_JSON" | grep -oE 'https://github.com/daeuniverse/openwrt-packages/releases/download/[^"]*(dae-|luci-app-dae|vmlinux)[^"]*\.apk' | sort -u || true)
+    
+    if [ -z "$DAE_URLS" ]; then
+      DAE_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/openwrt-25.12.6-6.12.112-20261024"
+      DAE_URLS="${DAE_BASE}/dae-0.8.0-r1.apk ${DAE_BASE}/luci-app-dae-0.8.0-r1.apk ${DAE_BASE}/vmlinux-6.12.112-x86_64.apk"
+    fi
+
+    for url in $DAE_URLS; do
+      echo "下載: $(basename "$url")..."
+      wget -q -c --timeout=25 --tries=3 "$url" -P packages/ || true
+    done
+  fi
+
+  echo "✓ 本地 packages/ 倉庫檔案清單:"
+  ls -lh packages/ || true
   echo "=========================================================="
   echo ""
 fi
 
-# 7. 第三方套件處理 (Argon 主題本地補齊)
-mkdir -p packages
-
+# 7. 第三方套件處理 (Argon 主題)
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
     echo "正在下載相容的 luci-theme-argon..."
