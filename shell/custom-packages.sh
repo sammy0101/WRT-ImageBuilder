@@ -19,13 +19,13 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 
 # ==============================================================================
 # 1. daeuniverse 官方最新代理 (適用於 25.12+ 核心 6.12，支援 OpenWrt 與 ImmortalWrt)
-# 官方規範: 需加上 @daeuniverse 標籤才能安裝
+# 官方規範: https://openwrt.daeuniverse.org/zh-tw/
 # ==============================================================================
-# honk (官方最新 Rust eBPF 核心 + LuCI 面板 + 繁中語系)
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk@daeuniverse luci-app-honk@daeuniverse luci-i18n-daeuniverse-zh-tw@daeuniverse"
+# honk (官方最新 Rust eBPF 核心 + LuCI 面板 + 繁中語言包)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk luci-app-honk luci-i18n-daeuniverse-zh-tw"
 
-# dae (官方經典 eBPF 核心 + LuCI 面板 + 繁中語系)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae@daeuniverse luci-app-dae@daeuniverse luci-i18n-daeuniverse-zh-tw@daeuniverse"
+# dae (官方經典 eBPF 核心 + LuCI 面板 + 繁中語言包)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae luci-app-dae luci-i18n-daeuniverse-zh-tw"
 
 # ==============================================================================
 # 2. 其他主流代理客戶端 (整套一行)
