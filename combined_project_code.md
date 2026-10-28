@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Wed Oct 28 14:47:30 UTC 2026
+Generated on: Wed Oct 28 14:48:14 UTC 2026
 
 ## File: shell/fetch-versions.sh
 ````sh
@@ -387,7 +387,7 @@ if __name__ == "__main__":
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 honk / dae 本地倉庫實體下載與自動簽名 + 旁路由模式 + VMware .vmdk
+# 支援 honk 官方套件精準注入 + 旁路由引導模式 + 繁中語系 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -487,7 +487,7 @@ fi
 is_apk=false
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   is_apk=true
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g; s/luci-app-argon-config//g')
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g; s/luci-app-argon-config//g; s/luci-app-honk//g')
 fi
 
 # 5. 整合 Overlay 檔案 (files 系統覆蓋層)
@@ -512,63 +512,26 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【daeuniverse 官方套件實體下載至 packages/ 解決 UNTRUSTED 報錯】
+# 6. 【精準下載 honk 官方套件至本地 packages/】
 mkdir -p packages
 
-if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]] || [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
+if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]]; then
   echo ""
   echo "=========================================================="
-  echo "  正在從 daeuniverse 官方抓取真實安裝包至本地 packages/ 倉庫..."
+  echo "  正在下載精準匹配 x86_64 的 honk 與 vmlinux-btf 套件..."
   echo "=========================================================="
 
-  # 下載官方簽名公鑰給開機後使用
+  # 下載官方公鑰備查
   wget -q -c --timeout=20 --tries=3 "https://openwrt.daeuniverse.org/public-key.pem" -O files/etc/apk/keys/daeuniverse.pem || true
 
-  # 寫入開機後的 apk 來源清單 (讓路由器以後在線上也能更新)
-  FEED_BASE="https://openwrt.daeuniverse.org/25.12"
-  cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
-@daeuniverse ${FEED_BASE}/packages/x86_64/packages.adb
-DAE_REPO
+  # 抓取 25.12.6 x86_64 專屬的 honk 與 vmlinux-btf
+  HONK_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/openwrt-25.12.6-6.12.112-20261024"
+
+  # 精準下載 x86_64 專用檔案 (避免下載其他 aarch64 檔案佔用空間)
+  wget -q -c --timeout=25 --tries=3 "${HONK_BASE}/25.12.6-honk-0.1.0_beta1-x86_64.apk" -P packages/ || true
+  
   if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-    echo "@daeuniverse ${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> files/etc/apk/repositories.d/daeuniverse.list
-  fi
-
-  # 直接從官方 Release 抓取編譯好的 APK 檔案放入 packages/ 目錄
-  # 這樣 ImageBuilder 會自動以本地生成的金鑰完成信任簽名，完全避免 UNTRUSTED 報錯
-  RELEASE_API_URL="https://api.github.com/repos/daeuniverse/openwrt-packages/releases/latest"
-  RELEASE_JSON=$(curl -sL --connect-timeout 15 "$RELEASE_API_URL" 2>/dev/null || true)
-
-  # 下載 honk 與 luci-app-honk
-  if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]]; then
-    echo "下載 honk 官方套件..."
-    HONK_URLS=$(echo "$RELEASE_JSON" | grep -oE 'https://github.com/daeuniverse/openwrt-packages/releases/download/[^"]*(honk|vmlinux)[^"]*\.apk' | sort -u || true)
-    
-    # 備用直鏈 (若 API 受限)
-    if [ -z "$HONK_URLS" ]; then
-      HONK_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/openwrt-25.12.6-6.12.112-20261024"
-      HONK_URLS="${HONK_BASE}/honk-0.0.1-r1.apk ${HONK_BASE}/luci-app-honk-0.0.1-r1.apk ${HONK_BASE}/vmlinux-6.12.112-x86_64.apk"
-    fi
-
-    for url in $HONK_URLS; do
-      echo "下載: $(basename "$url")..."
-      wget -q -c --timeout=25 --tries=3 "$url" -P packages/ || true
-    done
-  fi
-
-  # 下載 dae 與 luci-app-dae
-  if [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
-    echo "下載 dae 官方套件..."
-    DAE_URLS=$(echo "$RELEASE_JSON" | grep -oE 'https://github.com/daeuniverse/openwrt-packages/releases/download/[^"]*(dae-|luci-app-dae|vmlinux)[^"]*\.apk' | sort -u || true)
-    
-    if [ -z "$DAE_URLS" ]; then
-      DAE_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/openwrt-25.12.6-6.12.112-20261024"
-      DAE_URLS="${DAE_BASE}/dae-0.8.0-r1.apk ${DAE_BASE}/luci-app-dae-0.8.0-r1.apk ${DAE_BASE}/vmlinux-6.12.112-x86_64.apk"
-    fi
-
-    for url in $DAE_URLS; do
-      echo "下載: $(basename "$url")..."
-      wget -q -c --timeout=25 --tries=3 "$url" -P packages/ || true
-    done
+    wget -q -c --timeout=25 --tries=3 "${HONK_BASE}/25.12.6-vmlinux-btf-x86-64-6.12.112.apk" -P packages/ || true
   fi
 
   echo "✓ 本地 packages/ 倉庫檔案清單:"
@@ -577,7 +540,7 @@ DAE_REPO
   echo ""
 fi
 
-# 7. 第三方套件處理 (Argon 主題)
+# 7. 第三方套件處理 (Argon 主題本地補齊)
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
   if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
     echo "正在下載相容的 luci-theme-argon..."
