@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Wed Oct 28 14:08:43 UTC 2026
+Generated on: Wed Oct 28 14:09:07 UTC 2026
 
 ## File: shell/fetch-versions.sh
 ````sh
@@ -387,7 +387,7 @@ if __name__ == "__main__":
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 daeuniverse 官方標準源安裝 (honk / dae) + iStoreOS 首頁 + 旁路由模式 + VMware .vmdk
+# 支援 honk / dae 本地倉庫注入 + Argon雙件套 + iStoreOS首頁 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -520,57 +520,65 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【daeuniverse 官方標準安裝管道】(https://openwrt.daeuniverse.org/zh-tw/)
-HAS_DAEUNIVERSE=false
+# 6. 【第三方外部套件下載至 packages/ 本地倉庫】
+mkdir -p packages
+
+# (A) 下載 daeuniverse 官方 honk / dae (若有勾選)
 if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]] || [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
-  HAS_DAEUNIVERSE=true
   echo ""
   echo "=========================================================="
-  echo "  偵測到選擇安裝 honk / dae，按 daeuniverse 官方規範配置..."
+  echo "  正在從官方發布源抓取 honk / dae 套件至本地倉庫..."
   echo "=========================================================="
 
-  # (A) 下載官方公鑰並匯入信任庫
-  echo "正在下載 daeuniverse 官方簽章公鑰..."
+  # 下載官方簽名公鑰備查
   wget -q -c --timeout=20 --tries=3 "https://openwrt.daeuniverse.org/public-key.pem" -O files/etc/apk/keys/daeuniverse.pem || true
-  
-  # 複製給本機 ImageBuilder host apk 信任庫
-  if [ -f "files/etc/apk/keys/daeuniverse.pem" ]; then
-    mkdir -p staging_dir/host/etc/apk/keys /etc/apk/keys 2>/dev/null || true
-    cp -f files/etc/apk/keys/daeuniverse.pem staging_dir/host/etc/apk/keys/ 2>/dev/null || true
-    sudo cp -f files/etc/apk/keys/daeuniverse.pem /etc/apk/keys/ 2>/dev/null || true
-    echo "✓ 官方簽章公鑰已成功就位"
-  fi
 
-  # (B) 動態解析架構與軟體源
-  # 從系統資訊或 repositories.conf 解析封包架構 (例: x86_64, aarch64_cortex-a53)
-  PKG_ARCH=$(grep -m1 '/packages/' repositories.conf 2>/dev/null | sed -n 's|.*/packages/\([^/]*\)/.*|\1|p' || echo "x86_64")
-  [ -z "$PKG_ARCH" ] && PKG_ARCH="x86_64"
+  # 抓取 25.12 x86_64 官方最新 releases 包
+  DAE_RELEASE_TAG="openwrt-25.12.6-6.12.112-20261024"
+  DAE_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/${DAE_RELEASE_TAG}"
 
-  FEED_BASE="https://openwrt.daeuniverse.org/25.12"
-  
-  # 寫入路由器開機後的持久軟體源配置 (/etc/apk/repositories.d/daeuniverse.list)
-  if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-    cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
-${FEED_BASE}/packages/${PKG_ARCH}/packages.adb
-${FEED_BASE}/kmods/${FW_VER}/${TARGET_INPUT}/packages.adb
-DAE_REPO
-  else
-    cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
-${FEED_BASE}/packages/${PKG_ARCH}/packages.adb
-DAE_REPO
-  fi
-
-  # 同步注入 ImageBuilder 的 repositories.conf 供編譯期即時下載
-  if [ -f "repositories.conf" ]; then
-    echo "${FEED_BASE}/packages/${PKG_ARCH}/packages.adb" >> repositories.conf
+  if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]]; then
+    echo "下載 honk 與 luci-app-honk..."
+    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/honk-0.0.1-r1.apk" -P packages/ || true
+    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/luci-app-honk-0.0.1-r1.apk" -P packages/ || true
+    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/luci-i18n-daeuniverse-zh-tw-0.0.1-r1.apk" -P packages/ || true
+    # 若為 OpenWrt 官方原版，補齊 matching vmlinux-btf
     if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-      echo "${FEED_BASE}/kmods/${FW_VER}/${TARGET_INPUT}/packages.adb" >> repositories.conf
+      wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/vmlinux-6.12.112-x86_64.apk" -P packages/ || true
     fi
-    echo "✓ 已成功將 daeuniverse 官方 signed 倉庫加入 ImageBuilder"
   fi
 
+  if [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
+    echo "下載 dae 與 luci-app-dae..."
+    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/dae-0.8.0-r1.apk" -P packages/ || true
+    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/luci-app-dae-0.8.0-r1.apk" -P packages/ || true
+    if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+      wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/vmlinux-6.12.112-x86_64.apk" -P packages/ || true
+    fi
+  fi
   echo "=========================================================="
   echo ""
+fi
+
+# (B) 下載相容的 luci-theme-argon 與 luci-app-argon-config
+if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
+  echo "正在下載相容的 luci-theme-argon..."
+  if [ "$is_apk" = true ]; then
+    ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
+  else
+    ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
+  fi
+  wget -q -c --timeout=20 --tries=3 "$ARGON_THEME_URL" -P packages/ || true
+fi
+
+if [[ " $PACKAGES_TO_BUILD " =~ " luci-app-argon-config " ]]; then
+  echo "正在下載相容的 luci-app-argon-config..."
+  if [ "$is_apk" = true ]; then
+    ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config-0.9-r1.apk"
+  else
+    ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config_0.9_all.ipk"
+  fi
+  wget -q -c --timeout=20 --tries=3 "$ARGON_CONFIG_URL" -P packages/ || true
 fi
 
 # 7. 清洗官方原廠源 (若開啟)
@@ -586,37 +594,14 @@ if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
   fi
 fi
 
-# 8. 第三方套件處理 (Argon 主題)
-mkdir -p packages
-
 if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-  if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
-    echo "下載 luci-theme-argon 安裝包..."
-    if [ "$is_apk" = true ]; then
-      ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
-    else
-      ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
-    fi
-    wget -q -c --timeout=20 --tries=3 "$ARGON_THEME_URL" -P packages/ || true
-  fi
-
-  if [[ " $PACKAGES_TO_BUILD " =~ " luci-app-argon-config " ]]; then
-    echo "下載 luci-app-argon-config 安裝包..."
-    if [ "$is_apk" = true ]; then
-      ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config-0.9-r1.apk"
-    else
-      ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config_0.9_all.ipk"
-    fi
-    wget -q -c --timeout=20 --tries=3 "$ARGON_CONFIG_URL" -P packages/ || true
-  fi
-
   PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
 fi
 
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
 
-# 9. 打包構建 (帶有容錯自癒)
+# 8. 打包構建 (帶有容錯自癒)
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -673,7 +658,7 @@ execute_make_image() {
 
 execute_make_image "$PACKAGES_TO_BUILD"
 
-# 10. 自動轉換 VMware .vmdk 虛擬磁碟格式
+# 9. 自動轉換 VMware .vmdk 虛擬磁碟格式
 if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
   echo "正在生成 VMware .vmdk 虛擬磁碟..."
   for img_gz in "$OUTPUT_DIR"/*combined*.img.gz; do
