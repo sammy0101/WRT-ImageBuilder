@@ -1,33 +1,44 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# 自訂擴充軟體包選單 (預載繁體中文與 Argon 現代主題)
+# 自訂擴充軟體包選單 (極簡原生英文版，出廠自帶 Argon 主題)
+#
+# 【使用說明】:
+# 預設啟用官方原版英文 Web 介面、Argon 主題與旁路由工具鏈。
+# 所有第三方外掛與語言包均已加上「#」註解，建議開機後按需手動安裝。
+# （Docker 請直接在 GitHub Actions 網頁勾選，此處無需設定）
 # ==============================================================================
 
 CUSTOM_PACKAGES=""
 
 # ==============================================================================
-# 0. 核心基礎套件 (預設一同安裝)
+# 0. 核心基礎套件 (官方原生英文 + Argon 主題)
 # ==============================================================================
-# 核心 Web 網頁介面 + 官方繁體中文語言包
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci luci-i18n-base-zh-tw luci-i18n-firewall-zh-tw"
+# 核心 Web 網頁介面 (原生官方英文)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci"
 
-# Argon 現代自適應主題 (預設預裝)
+# Argon 現代自適應主題 (出廠預裝)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
 
 # 旁路由通用底層工具鏈 (預先植入)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup bash"
 
 # ==============================================================================
-# 1. daeuniverse 代理工具 (開機後手動安裝)
+# 1. 介面語言包 (選用，需要中文時取消註解即可)
 # ==============================================================================
-# honk (開機後依官方教學手動安裝)
+# 繁體中文語言包 (台灣 / 香港)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-base-zh-tw luci-i18n-firewall-zh-tw"
+
+# ==============================================================================
+# 2. daeuniverse 代理工具 (選用，開機後依官方教學手動安裝)
+# ==============================================================================
+# honk (官方最新 Rust eBPF 核心)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk"
 
-# dae (開機後手動安裝)
+# dae (官方經典 eBPF 核心)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae"
 
 # ==============================================================================
-# 2. 其他主流代理客戶端 (選用)
+# 3. 其他代理客戶端 (選用)
 # ==============================================================================
 # OpenClash (Clash.Meta / Mihomo 內核代理客戶端)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-openclash"
@@ -45,7 +56,7 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES v2raya xray-core luci-app-v2raya"
 
 # ==============================================================================
-# 3. DNS 防污染與廣告過濾 (選用)
+# 4. DNS 防污染與廣告過濾 (選用)
 # ==============================================================================
 # SmartDNS
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES smartdns luci-app-smartdns"
@@ -56,11 +67,11 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # AdGuard Home
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES adguardhome luci-app-adguardhome"
 
-# Adblock
+# Adblock (官方原生廣告過濾)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES adblock luci-app-adblock"
 
 # ==============================================================================
-# 4. 異地組網、內網穿透與 VPN (選用)
+# 5. 異地組網、內網穿透與 VPN (選用)
 # ==============================================================================
 # Tailscale
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES tailscale iptables-nft luci-app-tailscale"
@@ -75,9 +86,9 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES frpc luci-app-frpc"
 
 # ==============================================================================
-# 5. 常用網路功能、系統工具與維護 (選用)
+# 6. 常用網路功能、系統工具與維護 (選用)
 # ==============================================================================
-# ttyd 網頁終端機
+# ttyd 終端機
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES ttyd luci-app-ttyd"
 
 # 定時自動重啟
@@ -92,10 +103,10 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # Diskman 磁碟管理
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES e2fsprogs fdisk smartmontools luci-app-diskman"
 
-# Samba 4 局域網檔案共享
+# Samba 4 局域網共用
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES samba4-server luci-app-samba4"
 
-# 常用命令列工具箱
+# 常用命令列除錯測速工具箱
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES wget-ssl htop lsblk iperf3"
 
 export CUSTOM_PACKAGES
