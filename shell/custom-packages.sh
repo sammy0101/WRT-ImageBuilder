@@ -22,7 +22,7 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # 官方規範: 需加上 @daeuniverse 標籤才能安裝
 # ==============================================================================
 # honk (官方最新 Rust eBPF 核心 + LuCI 面板 + 繁中語系)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk@daeuniverse luci-app-honk@daeuniverse luci-i18n-daeuniverse-zh-tw@daeuniverse"
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk@daeuniverse luci-app-honk@daeuniverse luci-i18n-daeuniverse-zh-tw@daeuniverse"
 
 # dae (官方經典 eBPF 核心 + LuCI 面板 + 繁中語系)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae@daeuniverse luci-app-dae@daeuniverse luci-i18n-daeuniverse-zh-tw@daeuniverse"
