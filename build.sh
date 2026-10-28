@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 honk / dae 本地倉庫注入 + Argon雙件套 + iStoreOS首頁 + VMware .vmdk
+# 支援 daeuniverse 官方 signed 倉庫注入 + 容錯自癒 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 FW_TYPE="${FIRMWARE_TYPE:-ImmortalWrt}"
-FW_VER="${VERSION:-25.12.5}"
+FW_VER="${VERSION:-25.12.6}"
 SELECTED_DEVICE="${DEVICE_MODEL:-x86_generic}"
 SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
@@ -39,14 +39,14 @@ if [ -z "$TARGET_INPUT" ] || [ -z "$PROFILE_NAME" ]; then
 fi
 
 echo "=========================================================="
-echo "  開始構建雲端自訂韌體 (英文原生版)"
+echo "  開始構建雲端自訂韌體"
 echo "  系統類型: $FW_TYPE"
 echo "  系統版本: $FW_VER"
 echo "  所選設備: $DEVICE_KEY"
 echo "  目標架構 (Target): $TARGET_INPUT"
 echo "  設備代號 (Profile): $PROFILE_NAME"
-echo "  iStoreOS 首頁: $([ "$ENABLE_ISTORE_HOME" = "true" ] && echo "🎨 啟用 (QuickStart 拓撲儀表板)" || echo "預設首頁")"
-echo "  官方原廠源: $([ "$USE_OFFICIAL" = "true" ] && echo "啟用 (downloads 官方源)" || echo "停用 (維持預設)")"
+echo "  iStoreOS 首頁: $([ "$ENABLE_ISTORE_HOME" = "true" ] && echo "🎨 啟用" || echo "預設首頁")"
+echo "  官方原廠源: $([ "$USE_OFFICIAL" = "true" ] && echo "啟用" || echo "停用")"
 echo "  網路模式: $([ "$IS_BYPASS" = "true" ] && echo "🛡️ 旁路由模式" || echo "🌐 主路由模式")"
 echo "  本機 LAN IP: $TARGET_IP"
 if [ "$IS_BYPASS" = "true" ]; then
@@ -100,16 +100,16 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman"
 fi
 
-# 整合 iStoreOS 經典首頁組件 (QuickStart)
 if [[ "$ENABLE_ISTORE_HOME" == "true" ]]; then
-  echo "✓ 已勾選啟用 iStoreOS 經典首頁 (QuickStart 網絡拓撲與狀態儀表板)"
+  echo "✓ 已勾選啟用 iStoreOS 經典首頁"
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD quickstart luci-app-quickstart"
 fi
 
+# 自動清洗在 25.12 中已併入或廢棄的舊套件
 is_apk=false
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   is_apk=true
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g; s/luci-app-argon-config//g')
 fi
 
 # 5. 整合 Overlay 檔案 (files 系統覆蓋層)
@@ -134,68 +134,66 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【第三方外部套件下載至 packages/ 本地倉庫】
-mkdir -p packages
-
-# (A) 下載 daeuniverse 官方 honk / dae (若有勾選)
+# 6. 【daeuniverse 官方簽章倉庫掛載】(https://openwrt.daeuniverse.org/zh-tw/)
 if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]] || [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
   echo ""
   echo "=========================================================="
-  echo "  正在從官方發布源抓取 honk / dae 套件至本地倉庫..."
+  echo "  偵測到選擇安裝 honk / dae，按 daeuniverse 官方規範配置..."
   echo "=========================================================="
 
-  # 下載官方簽名公鑰備查
+  # 下載官方簽名公鑰並匯入編譯器與固件信任庫
   wget -q -c --timeout=20 --tries=3 "https://openwrt.daeuniverse.org/public-key.pem" -O files/etc/apk/keys/daeuniverse.pem || true
-
-  # 抓取 25.12 x86_64 官方最新 releases 包
-  DAE_RELEASE_TAG="openwrt-25.12.6-6.12.112-20261024"
-  DAE_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/${DAE_RELEASE_TAG}"
-
-  if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]]; then
-    echo "下載 honk 與 luci-app-honk..."
-    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/honk-0.0.1-r1.apk" -P packages/ || true
-    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/luci-app-honk-0.0.1-r1.apk" -P packages/ || true
-    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/luci-i18n-daeuniverse-zh-tw-0.0.1-r1.apk" -P packages/ || true
-    # 若為 OpenWrt 官方原版，補齊 matching vmlinux-btf
-    if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-      wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/vmlinux-6.12.112-x86_64.apk" -P packages/ || true
-    fi
+  
+  if [ -f "files/etc/apk/keys/daeuniverse.pem" ]; then
+    mkdir -p staging_dir/host/etc/apk/keys /etc/apk/keys 2>/dev/null || true
+    cp -f files/etc/apk/keys/daeuniverse.pem staging_dir/host/etc/apk/keys/ 2>/dev/null || true
+    sudo cp -f files/etc/apk/keys/daeuniverse.pem /etc/apk/keys/ 2>/dev/null || true
+    echo "✓ 官方簽章公鑰已成功就位"
   fi
 
-  if [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
-    echo "下載 dae 與 luci-app-dae..."
-    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/dae-0.8.0-r1.apk" -P packages/ || true
-    wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/luci-app-dae-0.8.0-r1.apk" -P packages/ || true
+  PKG_ARCH=$(grep -m1 '/packages/' repositories.conf 2>/dev/null | sed -n 's|.*/packages/\([^/]*\)/.*|\1|p' || echo "x86_64")
+  [ -z "$PKG_ARCH" ] && PKG_ARCH="x86_64"
+
+  FEED_BASE="https://openwrt.daeuniverse.org/25.12"
+  
+  # 寫入開機後的 apk 來源清單
+  cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
+${FEED_BASE}/packages/${PKG_ARCH}/packages.adb
+DAE_REPO
+  if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+    echo "${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> files/etc/apk/repositories.d/daeuniverse.list
+  fi
+
+  # 追加進 ImageBuilder 的 repositories.conf 讓編譯期即時抓取
+  if [ -f "repositories.conf" ]; then
+    echo "${FEED_BASE}/packages/${PKG_ARCH}/packages.adb" >> repositories.conf
     if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-      wget -q -c --timeout=20 --tries=3 "${DAE_BASE}/vmlinux-6.12.112-x86_64.apk" -P packages/ || true
+      echo "${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> repositories.conf
     fi
+    echo "✓ 已成功將 daeuniverse 官方 signed 倉庫掛載至 ImageBuilder"
   fi
   echo "=========================================================="
   echo ""
 fi
 
-# (B) 下載相容的 luci-theme-argon 與 luci-app-argon-config
-if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
-  echo "正在下載相容的 luci-theme-argon..."
-  if [ "$is_apk" = true ]; then
-    ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
-  else
-    ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
+# 7. 第三方套件處理 (Argon 主題本地 APK 補齊)
+mkdir -p packages
+
+if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+  if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
+    echo "正在下載相容的 luci-theme-argon..."
+    if [ "$is_apk" = true ]; then
+      ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
+    else
+      ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
+    fi
+    wget -q -c --timeout=20 --tries=3 "$ARGON_THEME_URL" -P packages/ || true
   fi
-  wget -q -c --timeout=20 --tries=3 "$ARGON_THEME_URL" -P packages/ || true
+
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
 fi
 
-if [[ " $PACKAGES_TO_BUILD " =~ " luci-app-argon-config " ]]; then
-  echo "正在下載相容的 luci-app-argon-config..."
-  if [ "$is_apk" = true ]; then
-    ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config-0.9-r1.apk"
-  else
-    ARGON_CONFIG_URL="https://github.com/jerrykuku/luci-app-argon-config/releases/download/v0.9/luci-app-argon-config_0.9_all.ipk"
-  fi
-  wget -q -c --timeout=20 --tries=3 "$ARGON_CONFIG_URL" -P packages/ || true
-fi
-
-# 7. 清洗官方原廠源 (若開啟)
+# 8. 清洗官方原廠源 (若開啟)
 if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
   echo "正在將 ImageBuilder 編譯環境替換為官方源..."
   if [[ "${FW_TYPE,,}" == "immortalwrt" ]]; then
@@ -208,14 +206,10 @@ if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
   fi
 fi
 
-if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
-fi
-
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
 
-# 8. 打包構建 (帶有容錯自癒)
+# 9. 打包構建 (帶有容錯自癒)
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -232,7 +226,6 @@ execute_make_image() {
     return 0
   fi
 
-  # 容錯自癒機制
   local missing_pkgs=$(grep -E '^\s+[a-zA-Z0-9_\.\-]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
   local parent_raw=$(grep -oE '[a-zA-Z0-9_\.\-]+\[[^]]+\]' "$log_tmp" | cut -d'[' -f1 | grep -v '^world$' | tr '\n' ' ')
   local parent_clean=""
@@ -272,7 +265,7 @@ execute_make_image() {
 
 execute_make_image "$PACKAGES_TO_BUILD"
 
-# 9. 自動轉換 VMware .vmdk 虛擬磁碟格式
+# 10. 自動轉換 VMware .vmdk 虛擬磁碟格式
 if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
   echo "正在生成 VMware .vmdk 虛擬磁碟..."
   for img_gz in "$OUTPUT_DIR"/*combined*.img.gz; do
