@@ -1,49 +1,41 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# 自訂擴充軟體包選單 (極簡原生穩定版 - 100% 保證編譯成功)
-#
-# 【使用說明】:
-# 預設啟用官方原版 100% 支援的核心 Web、繁體中文語系與旁路由必備工具鏈。
-# 所有第三方外掛均已加上「#」註解，建議開機後按需手動安裝。
-# （Docker 請直接在 GitHub Actions 網頁勾選，此處無需設定）
+# 自訂擴充軟體包選單 (預載繁體中文與 Argon 現代主題)
 # ==============================================================================
 
 CUSTOM_PACKAGES=""
 
 # ==============================================================================
-# 0. 核心基礎套件 (官方源 100% 內建，保證編譯成功)
+# 0. 核心基礎套件 (預設一同安裝)
 # ==============================================================================
 # 核心 Web 網頁介面 + 官方繁體中文語言包
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci luci-i18n-base-zh-tw luci-i18n-firewall-zh-tw"
 
-# 旁路由通用底層工具鏈 (出廠預載，日後手動安裝代理工具免再下載相依)
+# Argon 現代自適應主題 (預設預裝)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
+
+# 旁路由通用底層工具鏈 (預先植入)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup bash"
 
 # ==============================================================================
-# 1. 主題美化 (選用)
-# 【說明】ImmortalWrt 官方源自帶 argon；OpenWrt 官方原版無此包，建議開機後再裝
+# 1. daeuniverse 代理工具 (開機後手動安裝)
 # ==============================================================================
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
-
-# ==============================================================================
-# 2. daeuniverse 代理工具 (選用，開機後手動安裝)
-# ==============================================================================
-# honk (開機後可依官方手冊手動安裝)
+# honk (開機後依官方教學手動安裝)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk"
 
-# dae (開機後可手動安裝)
+# dae (開機後手動安裝)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae"
 
 # ==============================================================================
-# 3. 其他代理客戶端 (選用)
+# 2. 其他主流代理客戶端 (選用)
 # ==============================================================================
-# OpenClash (自帶內核環境)
+# OpenClash (Clash.Meta / Mihomo 內核代理客戶端)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-openclash"
 
-# PassWall (ImmortalWrt 官方支援佳)
+# PassWall (經典代理工具 + 常用組件)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-passwall"
 
-# HomeProxy (ImmortalWrt 官方首推)
+# HomeProxy (ImmortalWrt 官方主推)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-homeproxy"
 
 # Mihomo
@@ -53,7 +45,7 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES v2raya xray-core luci-app-v2raya"
 
 # ==============================================================================
-# 4. DNS 防污染與廣告過濾 (選用)
+# 3. DNS 防污染與廣告過濾 (選用)
 # ==============================================================================
 # SmartDNS
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES smartdns luci-app-smartdns"
@@ -64,11 +56,11 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # AdGuard Home
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES adguardhome luci-app-adguardhome"
 
-# Adblock (官方原生廣告過濾)
+# Adblock
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES adblock luci-app-adblock"
 
 # ==============================================================================
-# 5. 異地組網、內網穿透與 VPN (選用)
+# 4. 異地組網、內網穿透與 VPN (選用)
 # ==============================================================================
 # Tailscale
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES tailscale iptables-nft luci-app-tailscale"
@@ -83,9 +75,9 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES frpc luci-app-frpc"
 
 # ==============================================================================
-# 6. 常用網路功能、系統工具與維護 (選用)
+# 5. 常用網路功能、系統工具與維護 (選用)
 # ==============================================================================
-# ttyd 終端機
+# ttyd 網頁終端機
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES ttyd luci-app-ttyd"
 
 # 定時自動重啟
@@ -100,10 +92,10 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # Diskman 磁碟管理
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES e2fsprogs fdisk smartmontools luci-app-diskman"
 
-# Samba 4 局域網共用
+# Samba 4 局域網檔案共享
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES samba4-server luci-app-samba4"
 
-# 常用命令列除錯測速工具箱
+# 常用命令列工具箱
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES wget-ssl htop lsblk iperf3"
 
 export CUSTOM_PACKAGES
