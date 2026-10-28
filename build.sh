@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 daeuniverse 官方簽章倉庫無 tag 完美構建 + 自癒機制 + VMware .vmdk
+# 支援 daeuniverse 官方 signed 倉庫注入 + 旁路由模式 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -13,7 +13,6 @@ SELECTED_DEVICE="${DEVICE_MODEL:-x86_generic}"
 SIZE_IN_GB="${ROOTFS_SIZE_G:-1}"
 DOCKER_FLAG="${INCLUDE_DOCKER:-false}"
 USE_OFFICIAL="${USE_OFFICIAL_REPO:-false}"
-ENABLE_ISTORE_HOME="${ENABLE_ISTOREOS_DASHBOARD:-false}"
 IS_BYPASS="${IS_BYPASS_ROUTER:-false}"
 TARGET_IP="${LAN_IP:-192.168.100.1}"
 GW_IP="${GATEWAY_IP:-192.168.100.2}"
@@ -39,13 +38,12 @@ if [ -z "$TARGET_INPUT" ] || [ -z "$PROFILE_NAME" ]; then
 fi
 
 echo "=========================================================="
-echo "  開始構建雲端自訂韌體 (英文原生版)"
+echo "  開始構建雲端自訂韌體"
 echo "  系統類型: $FW_TYPE"
 echo "  系統版本: $FW_VER"
 echo "  所選設備: $DEVICE_KEY"
 echo "  目標架構 (Target): $TARGET_INPUT"
 echo "  設備代號 (Profile): $PROFILE_NAME"
-echo "  iStoreOS 首頁: $([ "$ENABLE_ISTORE_HOME" = "true" ] && echo "🎨 啟用" || echo "預設首頁")"
 echo "  官方原廠源: $([ "$USE_OFFICIAL" = "true" ] && echo "啟用" || echo "停用")"
 echo "  網路模式: $([ "$IS_BYPASS" = "true" ] && echo "🛡️ 旁路由模式" || echo "🌐 主路由模式")"
 echo "  本機 LAN IP: $TARGET_IP"
@@ -100,11 +98,6 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman"
 fi
 
-# 整合 iStoreOS 經典首頁組件 (QuickStart)
-if [[ "$ENABLE_ISTORE_HOME" == "true" ]]; then
-  PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD quickstart luci-app-quickstart"
-fi
-
 is_apk=false
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   is_apk=true
@@ -122,7 +115,7 @@ GATEWAY_IP="$GW_IP"
 DNS_SERVERS="$DNS_IPS"
 USE_OFFICIAL_REPO="$USE_OFFICIAL"
 FW_SYSTEM_TYPE="$FW_TYPE"
-ENABLE_ISTOREOS_HOME="$ENABLE_ISTORE_HOME"
+ENABLE_ISTOREOS_HOME="false"
 EOF
 
 if [[ "$PPPOE_EN" == "true" ]]; then
@@ -133,7 +126,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【daeuniverse 官方簽章倉庫掛載】(https://openwrt.daeuniverse.org/zh-tw/)
+# 6. 【daeuniverse 官方簽章倉庫精確掛載】(https://openwrt.daeuniverse.org/zh-tw/)
 if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]] || [[ " $PACKAGES_TO_BUILD " =~ " dae " ]]; then
   echo ""
   echo "=========================================================="
@@ -150,11 +143,9 @@ if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]] || [[ " $PACKAGES_TO_BUILD " =~ " da
     echo "✓ 官方簽章公鑰已成功就位"
   fi
 
-  PKG_ARCH=$(grep -m1 '/packages/' repositories.conf 2>/dev/null | sed -n 's|.*/packages/\([^/]*\)/.*|\1|p' || echo "x86_64")
-  [ -z "$PKG_ARCH" ] && PKG_ARCH="x86_64"
-
+  PKG_ARCH="x86_64"
   FEED_BASE="https://openwrt.daeuniverse.org/25.12"
-  
+
   # 開機後持久源清單 (路由器本機使用 @daeuniverse 標籤)
   cat <<DAE_REPO > files/etc/apk/repositories.d/daeuniverse.list
 @daeuniverse ${FEED_BASE}/packages/${PKG_ARCH}/packages.adb
@@ -163,14 +154,16 @@ DAE_REPO
     echo "@daeuniverse ${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> files/etc/apk/repositories.d/daeuniverse.list
   fi
 
-  # ImageBuilder 編譯期倉庫清單 (不加 @daeuniverse 標籤，讓 apk 能全局索引)
-  if [ -f "repositories.conf" ]; then
-    echo "${FEED_BASE}/packages/${PKG_ARCH}/packages.adb" >> repositories.conf
-    if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-      echo "${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> repositories.conf
+  # ImageBuilder 編譯期倉庫清單 (針對 repositories 或 repositories.conf 同步追加)
+  for repo_cfg in "repositories" "repositories.conf"; do
+    if [ -f "$repo_cfg" ]; then
+      echo "${FEED_BASE}/packages/${PKG_ARCH}/packages.adb" >> "$repo_cfg"
+      if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+        echo "${FEED_BASE}/kmods/${FW_VER}/${TARGET_DIR}/${SUBTARGET_DIR}/packages.adb" >> "$repo_cfg"
+      fi
+      echo "✓ 已成功將 daeuniverse 官方倉庫掛載至 ImageBuilder ($repo_cfg)"
     fi
-    echo "✓ 已成功將 daeuniverse 官方倉庫掛載至 ImageBuilder (全域索引模式)"
-  fi
+  done
   echo "=========================================================="
   echo ""
 fi
@@ -193,22 +186,26 @@ if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
 fi
 
 # 8. 清洗官方原廠源 (若開啟)
-if [ "$USE_OFFICIAL" = "true" ] && [ -f "repositories.conf" ]; then
+if [ "$USE_OFFICIAL" = "true" ]; then
   echo "正在將 ImageBuilder 編譯環境替換為官方源..."
-  if [[ "${FW_TYPE,,}" == "immortalwrt" ]]; then
-    sed -i 's|mirrors.vsean.net/openwrt|downloads.immortalwrt.org|g' repositories.conf
-    sed -i 's|https://.*/releases/|https://downloads.immortalwrt.org/releases/|g' repositories.conf
-    sed -i 's|http://.*/releases/|https://downloads.immortalwrt.org/releases/|g' repositories.conf
-  else
-    sed -i 's|https://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
-    sed -i 's|http://.*/releases/|https://downloads.openwrt.org/releases/|g' repositories.conf
-  fi
+  for repo_cfg in "repositories" "repositories.conf"; do
+    if [ -f "$repo_cfg" ]; then
+      if [[ "${FW_TYPE,,}" == "immortalwrt" ]]; then
+        sed -i 's|mirrors.vsean.net/openwrt|downloads.immortalwrt.org|g' "$repo_cfg"
+        sed -i 's|https://.*/releases/|https://downloads.immortalwrt.org/releases/|g' "$repo_cfg"
+        sed -i 's|http://.*/releases/|https://downloads.immortalwrt.org/releases/|g' "$repo_cfg"
+      else
+        sed -i 's|https://.*/releases/|https://downloads.openwrt.org/releases/|g' "$repo_cfg"
+        sed -i 's|http://.*/releases/|https://downloads.openwrt.org/releases/|g' "$repo_cfg"
+      fi
+    fi
+  done
 fi
 
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
 
-# 9. 打包構建 (升級容錯自癒)
+# 9. 打包構建 (帶有容錯自癒)
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -225,13 +222,8 @@ execute_make_image() {
     return 0
   fi
 
-  # 1. 抓取 (no such package)
   local missing_pkgs=$(grep -E '^\s+[a-zA-Z0-9_\.\-\@]+ \(no such package\):' "$log_tmp" | awk '{print $1}' | tr '\n' ' ')
-  
-  # 2. 抓取 missing repository tags 報錯中的套件名稱
   local tag_missing=$(grep -oE "dependency '[^']+'" "$log_tmp" | cut -d"'" -f2 | tr '\n' ' ')
-
-  # 3. 抓取引起問題的父級依賴
   local parent_raw=$(grep -oE '[a-zA-Z0-9_\.\-\@]+\[[^]]+\]' "$log_tmp" | cut -d'[' -f1 | grep -v '^world$' | tr '\n' ' ')
   local parent_clean=""
   for p in $parent_raw; do
