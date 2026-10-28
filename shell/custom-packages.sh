@@ -1,144 +1,109 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# 自訂擴充軟體包選單 (預載繁體中文與 Argon 美化，一功能一行)
+# 自訂擴充軟體包選單 (極簡原生穩定版 - 100% 保證編譯成功)
+#
+# 【使用說明】:
+# 預設啟用官方原版 100% 支援的核心 Web、繁體中文語系與旁路由必備工具鏈。
+# 所有第三方外掛均已加上「#」註解，建議開機後按需手動安裝。
+# （Docker 請直接在 GitHub Actions 網頁勾選，此處無需設定）
 # ==============================================================================
 
 CUSTOM_PACKAGES=""
 
 # ==============================================================================
-# 0. 核心基礎套件 (預設一同安裝)
+# 0. 核心基礎套件 (官方源 100% 內建，保證編譯成功)
 # ==============================================================================
 # 核心 Web 網頁介面 + 官方繁體中文語言包
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci luci-i18n-base-zh-tw luci-i18n-firewall-zh-tw"
 
-# Argon 現代自適應主題
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
-
-# 旁路由通用底層相依套件 (預先植入)
+# 旁路由通用底層工具鏈 (出廠預載，日後手動安裝代理工具免再下載相依)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup bash"
 
 # ==============================================================================
-# 1. daeuniverse 官方最新代理 (適用於 25.12+ 核心 6.12，支援 OpenWrt 與 ImmortalWrt)
-# 官方規範: https://openwrt.daeuniverse.org/zh-tw/
+# 1. 主題美化 (選用)
+# 【說明】ImmortalWrt 官方源自帶 argon；OpenWrt 官方原版無此包，建議開機後再裝
 # ==============================================================================
-# honk (官方最新 Rust eBPF 核心，出廠自帶 15MB 完整二進制與 vmlinux-btf)
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk"
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
 
-# dae (官方經典 eBPF 核心)
+# ==============================================================================
+# 2. daeuniverse 代理工具 (選用，開機後手動安裝)
+# ==============================================================================
+# honk (開機後可依官方手冊手動安裝)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk"
+
+# dae (開機後可手動安裝)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae"
 
 # ==============================================================================
-# 2. 其他主流代理客戶端 (整套一行)
+# 3. 其他代理客戶端 (選用)
 # ==============================================================================
-# OpenClash (Clash.Meta / Mihomo 內核代理客戶端)
+# OpenClash (自帶內核環境)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-openclash"
 
-# PassWall (經典代理工具 + 常用組件)
+# PassWall (ImmortalWrt 官方支援佳)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-passwall"
 
-# HomeProxy (ImmortalWrt 官方主推 sing-box 代理)
+# HomeProxy (ImmortalWrt 官方首推)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-homeproxy"
 
-# Mihomo (輕量化 Clash.Meta 原生 LuCI 面板)
+# Mihomo
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-mihomo"
 
-# ShadowSocksR Plus+ (SSR-Plus 老牌代理工具)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ssr-plus"
-
-# v2rayA (Xray/V2Ray 核心 + Web 介面)
+# v2rayA
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES v2raya xray-core luci-app-v2raya"
 
 # ==============================================================================
-# 3. DNS 防污染與廣告過濾 (整套一行)
+# 4. DNS 防污染與廣告過濾 (選用)
 # ==============================================================================
-# SmartDNS (防污染 DNS 核心 + LuCI 管理面板)
+# SmartDNS
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES smartdns luci-app-smartdns"
 
-# MosDNS (模組化 DNS 分流核心 + LuCI 管理面板)
+# MosDNS
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES mosdns luci-app-mosdns"
 
-# AdGuard Home (廣告攔截核心 + LuCI 管理面板)
+# AdGuard Home
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES adguardhome luci-app-adguardhome"
 
-# Adblock (官方輕量廣告攔截核心 + LuCI 面板)
+# Adblock (官方原生廣告過濾)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES adblock luci-app-adblock"
 
 # ==============================================================================
-# 4. 異地組網、內網穿透與 VPN (整套一行)
+# 5. 異地組網、內網穿透與 VPN (選用)
 # ==============================================================================
-# Tailscale (WireGuard 異地互聯核心 + 防火牆規則 + LuCI 面板)
+# Tailscale
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES tailscale iptables-nft luci-app-tailscale"
 
-# ZeroTier (虛擬區域網路 P2P 穿透核心 + LuCI 面板)
+# ZeroTier
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES zerotier luci-app-zerotier"
 
-# WireGuard (高效能 VPN 核心驅動 + 工具鏈 + LuCI 面板)
+# WireGuard
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-wireguard wireguard-tools luci-app-wireguard"
 
-# FRP Client (內網穿透客戶端核心 + LuCI 面板)
+# FRP Client
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES frpc luci-app-frpc"
 
 # ==============================================================================
-# 5. 常用網路功能、喚醒與動態域名 (整套一行)
+# 6. 常用網路功能、系統工具與維護 (選用)
 # ==============================================================================
-# UPnP 自動通訊埠對應 (服務核心 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES miniupnpd luci-app-upnp"
-
-# WOL 網路喚醒 (喚醒工具 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES etherwake luci-app-wol"
-
-# DDNS 動態域名解析 (腳本核心 + 泛用協定 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES ddns-scripts ddns-scripts-services luci-app-ddns"
-
-# Socat 通訊埠轉發工具 (雙向轉發核心 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES socat luci-app-socat"
-
-# MWAN3 多 WAN 負載均衡 (多撥/多線核心 + 規則工具 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES mwan3 luci-app-mwan3"
-
-# SQM 流量控制 (抗 Bufferbloat 高延遲核心腳本 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES sqm-scripts luci-app-sqm"
-
-# ==============================================================================
-# 6. 系統監控、頻寬統計與維護 (整套一行)
-# ==============================================================================
-# ttyd (網頁終端機核心 + LuCI 面板)
+# ttyd 終端機
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES ttyd luci-app-ttyd"
 
-# 定時自動重啟 (維護排程面板)
+# 定時自動重啟
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-autoreboot"
 
-# NLBWMon 流量統計 (監控守護進程 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES nlbwmon luci-app-nlbwmon"
+# UPnP 自動通訊埠對應
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES miniupnpd luci-app-upnp"
 
-# Statistics (collectd 統計守護核心 + 常用圖表外掛 + LuCI 圖表介面)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES collectd collectd-mod-cpu collectd-mod-interface collectd-mod-load luci-app-statistics"
+# WOL 網路喚醒
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES etherwake luci-app-wol"
 
-# ==============================================================================
-# 7. 磁碟管理、NAS 檔案共用與下載 (整套一行)
-# ==============================================================================
-# Diskman (磁碟分區管理 + 檔案系統工具 e2fsprogs/fdisk + SMART 健康檢測 + LuCI 面板)
+# Diskman 磁碟管理
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES e2fsprogs fdisk smartmontools luci-app-diskman"
 
-# Samba 4 (Windows 局域網檔案共享服務端 + LuCI 面板)
+# Samba 4 局域網共用
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES samba4-server luci-app-samba4"
 
-# 硬碟定時休眠 (休眠守護進程 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES hd-idle luci-app-hd-idle"
-
-# Aria2 (高速下載核心 + WebRPC 介面 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES aria2 ariang luci-app-aria2"
-
-# Transmission (經典 BT / PT 下載核心 + Web 介面 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES transmission-daemon-openssl transmission-web luci-app-transmission"
-
-# qBittorrent (功能強大的 BitTorrent 下載核心 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES qbittorrent luci-app-qbittorrent"
-
-# ==============================================================================
-# 8. 常用命令列排錯與測速工具 (整套一行)
-# ==============================================================================
-# 實用命令列工具箱 (完整版 wget + curl + htop 監控 + 磁碟工具 + 局域網測速 iperf3)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES curl wget-ssl htop lsblk fdisk e2fsprogs iperf3"
+# 常用命令列除錯測速工具箱
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES wget-ssl htop lsblk iperf3"
 
 export CUSTOM_PACKAGES
