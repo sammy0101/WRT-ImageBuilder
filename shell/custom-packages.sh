@@ -18,13 +18,14 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup bash"
 
 # ==============================================================================
-# 1. daeuniverse 官方最新代理 (支援 OpenWrt 25.12+ 與 ImmortalWrt)
+# 1. daeuniverse 官方最新代理 (適用於 25.12+ 核心 6.12，支援 OpenWrt 與 ImmortalWrt)
+# 官方規範: https://openwrt.daeuniverse.org/zh-tw/
 # ==============================================================================
-# honk (官方最新 Rust eBPF 核心 + LuCI 面板)
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk luci-app-honk"
+# honk (官方最新 Rust eBPF 核心，出廠自帶 15MB 完整二進制與 vmlinux-btf)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk"
 
-# dae (官方經典 eBPF 核心 + LuCI 面板)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae luci-app-dae"
+# dae (官方經典 eBPF 核心)
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae"
 
 # ==============================================================================
 # 2. 其他主流代理客戶端 (整套一行)
