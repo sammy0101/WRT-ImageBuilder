@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 honk 官方套件精準注入 + 自動檔名規範化 + 旁路由引導模式 + VMware .vmdk
+# 極致純淨穩定版：支援 旁路由引導模式 + 繁中語系預裝 + VMware .vmdk 自動轉換
 # ==============================================================================
 set -euo pipefail
 
@@ -38,7 +38,7 @@ if [ -z "$TARGET_INPUT" ] || [ -z "$PROFILE_NAME" ]; then
 fi
 
 echo "=========================================================="
-echo "  開始構建雲端自訂韌體"
+echo "  開始構建雲端自訂韌體 (官方原生穩定版)"
 echo "  系統類型: $FW_TYPE"
 echo "  系統版本: $FW_VER"
 echo "  所選設備: $DEVICE_KEY"
@@ -98,14 +98,20 @@ if [[ "$DOCKER_FLAG" == "true" ]]; then
   PACKAGES_TO_BUILD="$PACKAGES_TO_BUILD docker dockerd docker-compose luci-app-dockerman"
 fi
 
+# 5. 清理不相容套件
 is_apk=false
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   is_apk=true
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g; s/luci-app-argon-config//g; s/luci-app-honk//g')
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g; s/luci-app-argon-config//g')
 fi
 
-# 5. 整合 Overlay 檔案 (files 系統覆蓋層)
-mkdir -p files/etc/uci-defaults files/etc/config files/etc/apk/keys files/etc/apk/repositories.d
+# 若為 OpenWrt 原版，自動過濾官方源沒有的 argon 與 turboacc
+if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-theme-argon//g; s/luci-app-turboacc//g')
+fi
+
+# 6. 整合 Overlay 檔案 (files 系統覆蓋層)
+mkdir -p files/etc/uci-defaults files/etc/config
 cp -r "$ROOT_DIR/files/"* files/
 
 cat <<EOF > files/etc/custom_network_config
@@ -126,61 +132,7 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【精準下載 honk 並規範化檔名以符合 APK 索引機制】
-mkdir -p packages
-
-if [[ " $PACKAGES_TO_BUILD " =~ " honk " ]]; then
-  echo ""
-  echo "=========================================================="
-  echo "  正在下載精準匹配 x86_64 的 honk 與 vmlinux-btf 套件..."
-  echo "=========================================================="
-
-  wget -q -c --timeout=20 --tries=3 "https://openwrt.daeuniverse.org/public-key.pem" -O files/etc/apk/keys/daeuniverse.pem || true
-
-  HONK_BASE="https://github.com/daeuniverse/openwrt-packages/releases/download/openwrt-25.12.6-6.12.112-20261024"
-
-  # 下載原始檔案
-  wget -q -c --timeout=25 --tries=3 "${HONK_BASE}/25.12.6-honk-0.1.0_beta1-x86_64.apk" -O packages/downloaded_honk.apk || true
-  
-  if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-    wget -q -c --timeout=25 --tries=3 "${HONK_BASE}/25.12.6-vmlinux-btf-x86-64-6.12.112.apk" -O packages/downloaded_btf.apk || true
-  fi
-
-  # 【關鍵修復】將下載的檔案重新命名為 apk 包管理器索引能精確辨識的標準命名
-  if [ -f "packages/downloaded_honk.apk" ]; then
-    # 建立多個標準軟連結，保證 apk 索引解析器 100% 能找到實體檔案
-    cp -f packages/downloaded_honk.apk packages/honk-0.1.0_beta1-r1.apk
-    cp -f packages/downloaded_honk.apk packages/honk.apk
-    rm -f packages/downloaded_honk.apk
-  fi
-
-  if [ -f "packages/downloaded_btf.apk" ]; then
-    cp -f packages/downloaded_btf.apk packages/vmlinux-btf.apk
-    rm -f packages/downloaded_btf.apk
-  fi
-
-  echo "✓ 本地 packages/ 倉庫標準化清單:"
-  ls -lh packages/ || true
-  echo "=========================================================="
-  echo ""
-fi
-
-# 7. 第三方套件處理 (Argon 主題本地補齊)
-if [[ "${FW_TYPE,,}" == "openwrt" ]]; then
-  if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
-    echo "正在下載相容的 luci-theme-argon..."
-    if [ "$is_apk" = true ]; then
-      ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
-    else
-      ARGON_THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
-    fi
-    wget -q -c --timeout=20 --tries=3 "$ARGON_THEME_URL" -P packages/ || true
-  fi
-
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-app-turboacc//g')
-fi
-
-# 8. 清洗官方原廠源 (若開啟)
+# 7. 清洗官方原廠源 (若開啟)
 if [ "$USE_OFFICIAL" = "true" ]; then
   echo "正在將 ImageBuilder 編譯環境替換為官方源..."
   for repo_cfg in "repositories" "repositories.conf"; do
@@ -200,7 +152,7 @@ fi
 PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | xargs)
 echo "最終交給套件管理器的軟體包列表: $PACKAGES_TO_BUILD"
 
-# 9. 打包構建 (帶有容錯自癒)
+# 8. 打包構建 (帶有容錯自癒)
 execute_make_image() {
   local current_pkgs="$1"
   local log_tmp="/tmp/imagebuilder_build.log"
@@ -257,7 +209,7 @@ execute_make_image() {
 
 execute_make_image "$PACKAGES_TO_BUILD"
 
-# 10. 自動轉換 VMware .vmdk 虛擬磁碟格式
+# 9. 自動轉換 VMware .vmdk 虛擬磁碟格式
 if ls "$OUTPUT_DIR"/*combined* 1> /dev/null 2>&1; then
   echo "正在生成 VMware .vmdk 虛擬磁碟..."
   for img_gz in "$OUTPUT_DIR"/*combined*.img.gz; do
