@@ -1,23 +1,18 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# 自訂擴充軟體包選單 (極簡原生英文版，出廠自帶 Argon 主題)
-#
-# 【使用說明】:
-# 預設啟用官方原版英文 Web 介面、Argon 主題與旁路由工具鏈。
-# 所有第三方外掛與語言包均已加上「#」註解，建議開機後按需手動安裝。
-# （Docker 請直接在 GitHub Actions 網頁勾選，此處無需設定）
+# 自訂擴充軟體包選單 (預載官方英文 Web + Argon 主題與 Argon-Config 設定後台)
 # ==============================================================================
 
 CUSTOM_PACKAGES=""
 
 # ==============================================================================
-# 0. 核心基礎套件 (官方原生英文 + Argon 主題)
+# 0. 核心基礎套件 (預設一同安裝)
 # ==============================================================================
 # 核心 Web 網頁介面 (原生官方英文)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci"
 
-# Argon 現代自適應主題 (出廠預裝)
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon"
+# Argon 現代自適應主題 + Argon 外觀配置外掛 (兩者一同預裝)
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-theme-argon luci-app-argon-config"
 
 # 旁路由通用底層工具鏈 (預先植入)
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup bash"
@@ -103,7 +98,7 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # Diskman 磁碟管理
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES e2fsprogs fdisk smartmontools luci-app-diskman"
 
-# Samba 4 局域網共用
+# Samba 4 局域網檔案共享
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES samba4-server luci-app-samba4"
 
 # 常用命令列除錯測速工具箱
