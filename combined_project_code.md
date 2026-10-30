@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Fri Oct 30 15:02:32 UTC 2026
+Generated on: Fri Oct 30 15:03:01 UTC 2026
 
 ## File: shell/fetch-versions.sh
 ````sh
@@ -350,7 +350,7 @@ if __name__ == "__main__":
 #!/usr/bin/env bash
 # ==============================================================================
 # 核心構建程式: build.sh
-# 支援 Argon 主題雙重保證注入 + 旁路由引導模式 + 繁中語系 + VMware .vmdk
+# 支援 Argon 主題 + Argon-Config 同步打包預裝 + 旁路由模式 + VMware .vmdk
 # ==============================================================================
 set -euo pipefail
 
@@ -450,7 +450,7 @@ fi
 is_apk=false
 if [[ "$FW_VER" =~ ^25\. ]] || [ -f "staging_dir/host/bin/apk" ]; then
   is_apk=true
-  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g; s/luci-app-argon-config//g')
+  PACKAGES_TO_BUILD=$(echo "$PACKAGES_TO_BUILD" | sed 's/luci-i18n-opkg-zh-tw//g; s/luci-app-opkg//g')
 fi
 
 # 5. 整合 Overlay 檔案 (files 系統覆蓋層)
@@ -475,45 +475,41 @@ PPPOE_PASSWORD="${PPPOE_PASSWORD:-}"
 EOF
 fi
 
-# 6. 【雙重保險】Argon 主題本地下載與實體解壓注入
+# 6. 【精確下載】Argon 主題與 Argon-Config 實體套件至 packages/ 目錄
 mkdir -p packages
 
-if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]]; then
+if [[ " $PACKAGES_TO_BUILD " =~ " luci-theme-argon " ]] || [[ " $PACKAGES_TO_BUILD " =~ " luci-app-argon-config " ]]; then
   echo ""
   echo "=========================================================="
-  echo "  正在處理 luci-theme-argon 主題 (雙重保證機制)..."
+  echo "  正在下載 luci-theme-argon 與 luci-app-argon-config..."
   echo "=========================================================="
 
+  ARGON_API="https://api.github.com/repos/jerrykuku/luci-theme-argon/releases/latest"
+  ARGON_JSON=$(curl -sL --connect-timeout 15 "$ARGON_API" 2>/dev/null || true)
+
   if [ "$is_apk" = true ]; then
-    ARGON_URLS="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk https://mirror.ghproxy.com/https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon-2.4.7-r1.apk"
-    PKG_TARGET="packages/luci-theme-argon-2.4.7-r1.apk"
+    THEME_URL=$(echo "$ARGON_JSON" | grep -oE 'https://github.com/jerrykuku/luci-theme-argon/releases/download/[^"]+luci-theme-argon[^"]*\.apk' | head -n1 || true)
+    CONFIG_URL=$(echo "$ARGON_JSON" | grep -oE 'https://github.com/jerrykuku/luci-theme-argon/releases/download/[^"]+luci-app-argon-config[^"]*\.apk' | head -n1 || true)
+
+    # 官方 Release 備援直鏈 (v3.1.1 完整收錄兩者 APK)
+    [ -z "$THEME_URL" ] && THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v3.1.1/luci-theme-argon-3.1.1-r1.apk"
+    [ -z "$CONFIG_URL" ] && CONFIG_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v3.1.1/luci-app-argon-config-3.1.1-r1.apk"
   else
-    ARGON_URLS="https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk https://mirror.ghproxy.com/https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.7/luci-theme-argon_2.4.7-1_all.ipk"
-    PKG_TARGET="packages/luci-theme-argon_2.4.7-1_all.ipk"
+    THEME_URL=$(echo "$ARGON_JSON" | grep -oE 'https://github.com/jerrykuku/luci-theme-argon/releases/download/[^"]+luci-theme-argon[^"]*\.ipk' | head -n1 || true)
+    CONFIG_URL=$(echo "$ARGON_JSON" | grep -oE 'https://github.com/jerrykuku/luci-theme-argon/releases/download/[^"]+luci-app-argon-config[^"]*\.ipk' | head -n1 || true)
+
+    [ -z "$THEME_URL" ] && THEME_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v3.1.1/luci-theme-argon_3.1.1_all.ipk"
+    [ -z "$CONFIG_URL" ] && CONFIG_URL="https://github.com/jerrykuku/luci-theme-argon/releases/download/v3.1.1/luci-app-argon-config_3.1.1_all.ipk"
   fi
 
-  # 多重鏡像下載，直到成功為止
-  for url in $ARGON_URLS; do
-    echo "嘗試下載: $url"
-    if curl -f -sSL --connect-timeout 20 --retry 3 -k "$url" -o "$PKG_TARGET" 2>/dev/null; then
-      if [ -s "$PKG_TARGET" ] && [ "$(wc -c < "$PKG_TARGET")" -gt 50000 ]; then
-        echo "✓ 下載成功: $(ls -lh "$PKG_TARGET" | awk '{print $5}')"
-        break
-      fi
-    fi
+  for pkg_url in "$THEME_URL" "$CONFIG_URL"; do
+    [ -n "$pkg_url" ] || continue
+    echo "下載: $(basename "$pkg_url")..."
+    wget -q -c --timeout=25 --tries=3 "$pkg_url" -P packages/ || true
   done
 
-  # 【保險手段】：同時將其解壓直植入 files/ 覆蓋層，確保固件 100% 絕對自帶 Argon 主題
-  if [ -f "$PKG_TARGET" ]; then
-    if [ "$is_apk" = true ] && [ -x "staging_dir/host/bin/apk" ]; then
-      ./staging_dir/host/bin/apk extract --allow-untrusted --destination "$PWD/files/" "$PKG_TARGET" 2>/dev/null || true
-    fi
-    # 確保規範檔名存在於 packages/
-    cp -f "$PKG_TARGET" packages/luci-theme-argon.apk 2>/dev/null || true
-  fi
-
   echo "✓ 本地 packages/ 倉庫確認:"
-  ls -lh packages/ || true
+  ls -lh packages/ | grep -E "argon" || true
   echo "=========================================================="
   echo ""
 fi
@@ -588,8 +584,7 @@ execute_make_image() {
       FILES="files" \
       ROOTFS_PARTSIZE="$PARTSIZE_MB" \
       BIN_DIR="$OUTPUT_DIR"; then
-      # 確保 Argon 主題標註在已安裝清單中
-      echo "$cleaned_pkgs luci-theme-argon" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
+      echo "$cleaned_pkgs" | tr ' ' '\n' | sort -u | grep -v '^$' > "$OUTPUT_DIR/custom_packages.txt"
       return 0
     fi
     return 1
