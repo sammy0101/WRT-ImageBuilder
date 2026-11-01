@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Sun Nov  1 13:33:48 UTC 2026
+Generated on: Sun Nov  1 13:34:16 UTC 2026
 
 ## File: shell/fetch-versions.sh
 ````sh
@@ -76,15 +76,6 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # ==============================================================================
 # 繁體中文語言包 (台灣 / 香港)
 # CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-base-zh-tw"
-
-# ==============================================================================
-# 2. daeuniverse 代理工具 (選用，開機後依官方教學手動安裝)
-# ==============================================================================
-# honk (官方最新 Rust eBPF 核心)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES honk"
-
-# dae (官方經典 eBPF 核心)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES dae"
 
 # ==============================================================================
 # 3. 其他代理客戶端 (選用)
