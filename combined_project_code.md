@@ -1,5 +1,5 @@
 # Complete Project Codebase
-Generated on: Fri Oct 30 15:03:01 UTC 2026
+Generated on: Sun Nov  1 13:33:48 UTC 2026
 
 ## File: shell/fetch-versions.sh
 ````sh
@@ -75,7 +75,7 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-tun ca-bundle curl tar coreutils-nohup ba
 # 1. 介面語言包 (選用，需要中文時取消註解即可)
 # ==============================================================================
 # 繁體中文語言包 (台灣 / 香港)
-# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-base-zh-tw luci-i18n-firewall-zh-tw"
+# CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-base-zh-tw"
 
 # ==============================================================================
 # 2. daeuniverse 代理工具 (選用，開機後依官方教學手動安裝)
